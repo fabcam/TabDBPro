@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TabDB Pro</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar: schema tree -->
+    <aside id="sidebar">
+      <!-- Connection selector (hidden when single connection) -->
+      <div id="connection-section" class="hidden">
+        <div class="sidebar-header">
+          <span class="sidebar-title">Connection</span>
+        </div>
+        <div id="connection-list" class="connection-list"></div>
+      </div>
+
+      <div class="sidebar-header">
+        <span class="sidebar-title">Database</span>
+        <button id="btn-refresh-schema" class="icon-btn" title="Refresh schema">↻</button>
+      </div>
+      <div id="db-list" class="db-list"></div>
+
+      <!-- Tables + Saved share the remaining sidebar space -->
+      <div class="sidebar-lower">
+        <div class="sidebar-section-header">
+          <span class="sidebar-title">Tables · <span id="db-label">—</span></span>
+        </div>
+        <div id="table-list" class="table-list"></div>
+
+        <div class="sidebar-section-header">
+          <span class="sidebar-title">Saved</span>
+        </div>
+        <div id="saved-query-list" class="saved-query-list"></div>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main id="main">
+      <!-- Toolbar -->
+      <div id="toolbar">
+        <div id="status-indicator" class="status-dot disconnected" title="Bridge status"></div>
+        <span id="status-text" class="status-text">Checking bridge...</span>
+        <span id="conn-badge" class="conn-badge hidden"></span>
+        <button id="btn-settings" class="icon-btn" title="Settings">⚙</button>
+        <div class="spacer"></div>
+        <label class="toolbar-label">Limit
+          <select id="select-limit">
+            <option value="100">100</option>
+            <option value="500">500</option>
+            <option value="1000">1000</option>
+            <option value="0">No limit</option>
+          </select>
+        </label>
+        <button id="btn-network" class="icon-btn" title="Network requests">⇅</button>
+        <button id="btn-save-query" class="icon-btn" title="Save current query (Ctrl+S)">★</button>
+        <button id="btn-run" class="btn-primary" title="Run query (Ctrl+Enter)">▶ Run</button>
+      </div>
+
+      <!-- Editor tabs -->
+      <div id="editor-tabs" class="editor-tabs"></div>
+
+      <!-- Editor area -->
+      <div id="editor-container">
+        <textarea id="editor" spellcheck="false" placeholder="SELECT * FROM users LIMIT 10;"></textarea>
+      </div>
+
+      <!-- Results area -->
+      <div id="results-container">
+        <div id="results-tabs" class="results-tabs hidden"></div>
+        <div id="results-meta" class="results-meta hidden"></div>
+        <div id="results-table-wrap">
+          <table id="results-table">
+            <thead id="results-head"></thead>
+            <tbody id="results-body"></tbody>
+          </table>
+          <div id="results-empty" class="state-placeholder hidden">Run a query to see results</div>
+          <div id="results-loading" class="state-placeholder hidden">
+            <span class="spinner"></span> Running...
+          </div>
+          <div id="results-error" class="state-placeholder error hidden"></div>
+        </div>
+      </div>
+
+      <!-- Network requests panel -->
+      <div id="network-panel" class="hidden">
+        <div class="net-panel-header">
+          <span>Network Requests</span>
+          <div class="net-header-controls">
+            <input id="net-prefix" class="net-prefix-input" type="text" placeholder="Filter, e.g. /api or localhost:3000" title="Show only requests whose URL contains this text">
+            <button id="btn-clear-net" class="icon-btn">Clear</button>
+          </div>
+        </div>
+        <div class="net-list"></div>
+      </div>
+
+      <!-- History panel -->
+      <div id="history-panel" class="hidden">
+        <div class="history-header">
+          <span>Query History</span>
+          <button id="btn-clear-history" class="icon-btn">Clear</button>
+        </div>
+        <ul id="history-list"></ul>
+      </div>
+    </main>
+  </div>
+
+  <!-- Table context menu -->
+  <div id="table-context-menu" class="context-menu hidden">
+    <div class="context-item" data-action="describe">Describe table</div>
+    <div class="context-item" data-action="indexes">Show indexes</div>
+    <div class="context-item" data-action="select">SELECT * FROM …</div>
+    <div class="context-separator"></div>
+    <div class="context-item" data-action="copy">Copy name</div>
+  </div>
+
+  <!-- Error modal -->
+  <div id="error-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">Error</span>
+        <button id="modal-close" class="modal-close-btn">✕</button>
+      </div>
+      <pre id="modal-message" class="modal-message"></pre>
+    </div>
+  </div>
+
+  <!-- Save query modal -->
+  <div id="save-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">Save Query</span>
+        <button id="save-modal-close" class="modal-close-btn">✕</button>
+      </div>
+      <div class="modal-body">
+        <input id="save-query-name" type="text" class="modal-input" placeholder="Query name…" maxlength="60" autocomplete="off">
+        <div id="save-modal-error" class="save-modal-error"></div>
+        <div class="modal-actions">
+          <button id="save-query-confirm" class="btn-primary">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Network query generator modal -->
+  <div id="nq-modal" class="modal-overlay hidden">
+    <div class="modal nq-modal">
+      <div class="modal-header">
+        <span id="nq-title" class="modal-title nq-modal-title" title=""></span>
+        <button class="modal-close-btn" id="nq-cancel-x">✕</button>
+      </div>
+      <div class="nq-body">
+        <div class="nq-row">
+          <label class="nq-label">Table</label>
+          <select id="nq-table" class="modal-input"></select>
+        </div>
+        <div class="nq-row nq-conds-wrap">
+          <label class="nq-label">Conditions</label>
+          <div id="nq-conditions" class="nq-conditions"></div>
+        </div>
+        <div class="nq-row nq-preview-wrap">
+          <label class="nq-label">SQL</label>
+          <pre id="nq-preview" class="nq-preview"></pre>
+        </div>
+      </div>
+      <div class="settings-footer">
+        <button id="nq-cancel" class="btn-sm">Cancel</button>
+        <button id="nq-open" class="btn-sm">Open in editor</button>
+        <button id="nq-run" class="btn-primary">▶ Run</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings modal -->
+  <div id="settings-modal" class="modal-overlay hidden">
+    <div class="modal settings-modal">
+      <div class="modal-header">
+        <span class="modal-title settings-modal-title">Settings</span>
+        <button id="settings-modal-close" class="modal-close-btn">✕</button>
+      </div>
+      <div id="settings-body" class="settings-body"></div>
+    </div>
+  </div>
+
+  <script src="panel.js" type="module"></script>
+</body>
+</html>

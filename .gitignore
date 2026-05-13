@@ -1,0 +1,8 @@
+node_modules/
+bridge/node_modules/
+bridge/.env
+bridge/.env.old
+bridge/.env.local
+bridge/data/known_hosts.json
+data/known_hosts.json
+.claude/

@@ -1,0 +1,1583 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TabDB Pro — Database debugging inside Chrome DevTools</title>
+  <meta name="description"
+    content="Query, edit and debug your database directly from Chrome DevTools. No tab switching, no GUI tools — just you, your code, and your data.">
+  <meta property="og:title" content="TabDB Pro — Database debugging inside Chrome DevTools">
+  <meta property="og:description"
+    content="Query, edit and debug your database without leaving the browser. Built for developers who hate context switching.">
+  <meta property="og:type" content="website">
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #0d1117;
+      --bg2: #161b22;
+      --bg3: #1f2937;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --accent2: #388bfd;
+      --green: #3fb950;
+      --purple: #bc8cff;
+      --yellow: #e3b341;
+      --red: #f85149;
+      --teal: #39d0a0;
+      --font-mono: 'Cascadia Code', 'Fira Code', 'Consolas', ui-monospace, monospace;
+      --font-ui: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-ui);
+      font-size: 16px;
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* ── Utilities ── */
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    /* ── Nav ── */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(13, 17, 23, .85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 24px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 17px;
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .nav-logo-icon {
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, var(--accent), var(--purple));
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .nav-link {
+      color: var(--muted);
+      font-size: 14px;
+      text-decoration: none;
+    }
+
+    .nav-link:hover {
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .btn-github {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 7px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      text-decoration: none;
+      transition: background .15s, border-color .15s;
+    }
+
+    .btn-github:hover {
+      background: var(--bg3);
+      border-color: var(--accent);
+      text-decoration: none;
+    }
+
+    /* ── Hero ── */
+    .hero {
+      padding: 80px 24px 0;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -200px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 900px;
+      height: 600px;
+      background: radial-gradient(ellipse at center, rgba(88, 166, 255, .12) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(88, 166, 255, .1);
+      border: 1px solid rgba(88, 166, 255, .3);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: 100px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      margin-bottom: 28px;
+    }
+
+    .hero-badge-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--accent);
+      border-radius: 50%;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      50% {
+        opacity: .5;
+        transform: scale(.8);
+      }
+    }
+
+    .hero h1 {
+      font-size: clamp(36px, 6vw, 68px);
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -.03em;
+      margin-bottom: 24px;
+    }
+
+    .grad-text {
+      background: linear-gradient(135deg, var(--accent) 0%, var(--purple) 50%, var(--teal) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-sub {
+      font-size: clamp(16px, 2vw, 20px);
+      color: var(--muted);
+      max-width: 640px;
+      margin: 0 auto 40px;
+      line-height: 1.7;
+    }
+
+    .hero-ctas {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 64px;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      padding: 12px 28px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: background .15s, transform .1s;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent2);
+      transform: translateY(-1px);
+      text-decoration: none;
+    }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--text);
+      padding: 12px 28px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 500;
+      border: 1px solid var(--border);
+      text-decoration: none;
+      transition: border-color .15s, transform .1s;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--muted);
+      transform: translateY(-1px);
+      text-decoration: none;
+    }
+
+    /* ── Demo video ── */
+    .demo-window {
+      width: fit-content;
+      max-width: 100%;
+      margin: 0 auto;
+      border-radius: 12px 12px 0 0;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-bottom: none;
+      box-shadow: 0 40px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.04);
+      background: #1a1f2e;
+      text-align: left;
+    }
+    .demo-gif {
+      display: block;
+      width: auto;
+      max-width: 100%;
+      height: auto;
+      margin: 0 auto;
+    }
+
+    /* ── DevTools Mockup ── */
+    .devtools-window {
+      max-width: 900px;
+      margin: 0 auto;
+      border-radius: 12px 12px 0 0;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-bottom: none;
+      box-shadow: 0 40px 80px rgba(0, 0, 0, .6), 0 0 0 1px rgba(255, 255, 255, .04);
+      background: #1a1f2e;
+      text-align: left;
+    }
+
+    .window-chrome {
+      background: #252d3d;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, .07);
+    }
+
+    .window-dots {
+      display: flex;
+      gap: 6px;
+    }
+
+    .window-dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+    }
+
+    .dot-red {
+      background: #ff5f57;
+    }
+
+    .dot-yellow {
+      background: #febc2e;
+    }
+
+    .dot-green {
+      background: #27c840;
+    }
+
+    .window-url {
+      flex: 1;
+      background: rgba(0, 0, 0, .25);
+      border-radius: 5px;
+      padding: 4px 12px;
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+    }
+
+    /* DevTools tab bar */
+    .devtools-tabs {
+      background: #1e2535;
+      display: flex;
+      align-items: flex-end;
+      padding: 0 16px;
+      gap: 2px;
+      border-bottom: 1px solid rgba(255, 255, 255, .07);
+    }
+
+    .dt-tab {
+      padding: 7px 14px;
+      font-size: 11px;
+      color: #6e7a94;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .dt-tab.active {
+      color: #a8c8ff;
+      border-bottom-color: #58a6ff;
+      font-weight: 600;
+    }
+
+    /* DevTools panel body */
+    .devtools-body {
+      display: grid;
+      grid-template-columns: 168px 1fr;
+      height: 320px;
+      overflow: hidden;
+    }
+
+    /* Sidebar */
+    .mock-sidebar {
+      background: #1a2032;
+      border-right: 1px solid rgba(255, 255, 255, .07);
+      display: flex;
+      flex-direction: column;
+      font-size: 11px;
+      overflow: hidden;
+    }
+
+    .mock-sidebar-section {
+      padding: 6px 10px 4px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: #4a5568;
+    }
+
+    .mock-db-item {
+      padding: 4px 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-mono);
+      color: #39d0a0;
+      font-weight: 600;
+      font-size: 11px;
+    }
+
+    .mock-db-item::before {
+      content: '●';
+      font-size: 8px;
+    }
+
+    .mock-table-item {
+      padding: 4px 12px;
+      font-family: var(--font-mono);
+      color: #8b949e;
+      font-size: 10.5px;
+      cursor: pointer;
+    }
+
+    .mock-table-item.active {
+      background: #1d4ed8;
+      color: #fff;
+      border-radius: 3px;
+      margin: 0 4px;
+      padding: 4px 8px;
+    }
+
+    .mock-table-item:hover:not(.active) {
+      background: rgba(255, 255, 255, .05);
+    }
+
+    /* Main editor area */
+    .mock-main {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: #141924;
+    }
+
+    /* Editor tabs */
+    .mock-editor-tabs {
+      background: #1a2032;
+      display: flex;
+      align-items: flex-end;
+      padding: 4px 8px 0;
+      gap: 2px;
+      border-bottom: 1px solid rgba(255, 255, 255, .07);
+    }
+
+    .mock-etab {
+      padding: 4px 12px;
+      font-size: 10px;
+      font-family: var(--font-mono);
+      color: #4a5568;
+      border-radius: 4px 4px 0 0;
+      border: 1px solid transparent;
+      border-bottom: none;
+    }
+
+    .mock-etab.active {
+      color: #e6edf3;
+      background: #141924;
+      border-color: rgba(255, 255, 255, .1);
+    }
+
+    /* SQL editor */
+    .mock-editor {
+      padding: 12px 14px;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      line-height: 1.7;
+      height: 88px;
+      border-bottom: 1px solid rgba(255, 255, 255, .07);
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .sql-kw {
+      color: #569cd6;
+    }
+
+    .sql-tbl {
+      color: #4ec9b0;
+    }
+
+    .sql-col {
+      color: #9cdcfe;
+    }
+
+    .sql-op {
+      color: #c586c0;
+    }
+
+    .sql-val {
+      color: #ce9178;
+    }
+
+    .sql-num {
+      color: #b5cea8;
+    }
+
+    /* Results table */
+    .mock-results {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .mock-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 10.5px;
+      font-family: var(--font-mono);
+    }
+
+    .mock-table th {
+      background: #1e2535;
+      color: #8b949e;
+      padding: 4px 10px;
+      text-align: left;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      border-bottom: 1px solid rgba(255, 255, 255, .07);
+      white-space: nowrap;
+    }
+
+    .mock-table td {
+      padding: 4px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, .04);
+      white-space: nowrap;
+      overflow: hidden;
+      max-width: 120px;
+      text-overflow: ellipsis;
+    }
+
+    .mock-table tr:hover td {
+      background: rgba(255, 255, 255, .04);
+    }
+
+    .td-id {
+      color: #b5cea8;
+    }
+
+    .td-name {
+      color: #ce9178;
+    }
+
+    .td-email {
+      color: #9cdcfe;
+    }
+
+    .td-role {
+      color: #c586c0;
+    }
+
+    .td-fk {
+      color: #58a6ff;
+      cursor: pointer;
+    }
+
+    .td-null {
+      color: #4a5568;
+      font-style: italic;
+    }
+
+    .mock-row-count {
+      position: absolute;
+      bottom: 6px;
+      right: 10px;
+      font-size: 9px;
+      color: #4a5568;
+      font-family: var(--font-mono);
+    }
+
+    /* ── Section shared ── */
+    section {
+      padding: 96px 0;
+    }
+
+    .section-label {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--accent);
+      margin-bottom: 14px;
+    }
+
+    .section-title {
+      font-size: clamp(28px, 4vw, 42px);
+      font-weight: 800;
+      letter-spacing: -.03em;
+      line-height: 1.15;
+      margin-bottom: 18px;
+    }
+
+    .section-sub {
+      font-size: 17px;
+      color: var(--muted);
+      max-width: 560px;
+      line-height: 1.7;
+    }
+
+    /* ── Network → SQL feature ── */
+    .net-feature {
+      background: var(--bg2);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .net-feature .container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 60px;
+      align-items: center;
+    }
+
+    @media (max-width: 720px) {
+      .net-feature .container {
+        grid-template-columns: 1fr;
+        gap: 40px;
+      }
+    }
+
+    .net-demo {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .net-card {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+
+    .net-card-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      margin-bottom: 10px;
+      font-family: var(--font-ui);
+    }
+
+    .net-card-label.req-label {
+      color: var(--yellow);
+    }
+
+    .net-card-label.sql-label {
+      color: var(--teal);
+    }
+
+    .net-request {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .method-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+
+    .method-get {
+      background: rgba(63, 185, 80, .15);
+      color: var(--green);
+    }
+
+    .method-post {
+      background: rgba(227, 179, 65, .15);
+      color: var(--yellow);
+    }
+
+    .net-url {
+      color: var(--muted);
+      font-size: 11px;
+      overflow-wrap: break-word;
+    }
+
+    .net-url span {
+      color: var(--accent);
+    }
+
+    .net-arrow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .net-arrow-line {
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border), transparent);
+    }
+
+    .net-arrow-icon {
+      font-size: 18px;
+      color: var(--accent);
+      animation: bounce-x 2s ease-in-out infinite;
+    }
+
+    @keyframes bounce-x {
+
+      0%,
+      100% {
+        transform: translateX(0);
+      }
+
+      50% {
+        transform: translateX(4px);
+      }
+    }
+
+    .sql-result {
+      line-height: 1.8;
+    }
+
+    .sql-result .sql-kw {
+      color: #569cd6;
+    }
+
+    .sql-result .sql-tbl {
+      color: #4ec9b0;
+    }
+
+    .sql-result .sql-col {
+      color: #9cdcfe;
+    }
+
+    .sql-result .sql-val {
+      color: #ce9178;
+    }
+
+    /* ── Features grid ── */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      margin-top: 56px;
+    }
+
+    .features-grid.cols-4 {
+      grid-template-columns: repeat(4, 1fr);
+    }
+
+    @media (max-width: 860px) {
+
+      .features-grid,
+      .features-grid.cols-4 {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 540px) {
+
+      .features-grid,
+      .features-grid.cols-4 {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .feature-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      transition: border-color .2s, transform .2s, box-shadow .2s;
+    }
+
+    .feature-card:hover {
+      border-color: rgba(88, 166, 255, .4);
+      transform: translateY(-3px);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, .3);
+    }
+
+    .feature-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      margin-bottom: 16px;
+    }
+
+    .fi-blue {
+      background: rgba(88, 166, 255, .15);
+    }
+
+    .fi-green {
+      background: rgba(63, 185, 80, .15);
+    }
+
+    .fi-purple {
+      background: rgba(188, 140, 255, .15);
+    }
+
+    .fi-yellow {
+      background: rgba(227, 179, 65, .15);
+    }
+
+    .fi-teal {
+      background: rgba(57, 208, 160, .15);
+    }
+
+    .fi-red {
+      background: rgba(248, 81, 73, .15);
+    }
+
+    .feature-title {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+
+    .feature-desc {
+      font-size: 13.5px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    /* ── Audience section ── */
+    .audience {
+      background: var(--bg2);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .audience .container {
+      text-align: center;
+    }
+
+    .audience .section-sub {
+      margin: 0 auto;
+    }
+
+    .audience-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      margin-top: 56px;
+      text-align: left;
+    }
+
+    @media (max-width: 720px) {
+      .audience-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .audience-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px 24px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .audience-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+    }
+
+    .ac-front::before {
+      background: linear-gradient(90deg, var(--accent), var(--purple));
+    }
+
+    .ac-back::before {
+      background: linear-gradient(90deg, var(--green), var(--teal));
+    }
+
+    .ac-qa::before {
+      background: linear-gradient(90deg, var(--yellow), var(--red));
+    }
+
+    .audience-persona {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      margin-bottom: 12px;
+    }
+
+    .ac-front .audience-persona {
+      color: var(--accent);
+    }
+
+    .ac-back .audience-persona {
+      color: var(--green);
+    }
+
+    .ac-qa .audience-persona {
+      color: var(--yellow);
+    }
+
+    .audience-tagline {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 14px;
+      line-height: 1.3;
+    }
+
+    .audience-desc {
+      font-size: 13.5px;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    .audience-bullets {
+      list-style: none;
+      margin-top: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .audience-bullets li {
+      font-size: 13px;
+      color: var(--muted);
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .audience-bullets li::before {
+      content: '✓';
+      font-weight: 700;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .ac-front .audience-bullets li::before {
+      color: var(--accent);
+    }
+
+    .ac-back .audience-bullets li::before {
+      color: var(--green);
+    }
+
+    .ac-qa .audience-bullets li::before {
+      color: var(--yellow);
+    }
+
+    /* ── How it works ── */
+    .how .container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 80px;
+      align-items: center;
+    }
+
+    @media (max-width: 720px) {
+      .how .container {
+        grid-template-columns: 1fr;
+        gap: 48px;
+      }
+    }
+
+    .steps {
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+      margin-top: 48px;
+    }
+
+    .step {
+      display: flex;
+      gap: 20px;
+    }
+
+    .step-number {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(88, 166, 255, .15);
+      border: 1px solid rgba(88, 166, 255, .3);
+      color: var(--accent);
+      font-weight: 800;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .step-content {
+      padding-top: 4px;
+    }
+
+    .step-title {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .step-desc {
+      font-size: 13.5px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .step-code {
+      display: inline-block;
+      margin-top: 8px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--teal);
+    }
+
+    /* Terminal mockup (how it works side) */
+    .terminal {
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
+    }
+
+    .terminal-header {
+      background: var(--bg2);
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .terminal-dots {
+      display: flex;
+      gap: 6px;
+    }
+
+    .terminal-title {
+      flex: 1;
+      text-align: center;
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+    }
+
+    .terminal-body {
+      padding: 16px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.8;
+    }
+
+    .t-prompt {
+      color: var(--green);
+    }
+
+    .t-cmd {
+      color: var(--text);
+    }
+
+    .t-out {
+      color: var(--muted);
+    }
+
+    .t-ok {
+      color: var(--teal);
+    }
+
+    .t-cursor {
+      display: inline-block;
+      width: 8px;
+      height: 14px;
+      background: var(--accent);
+      vertical-align: middle;
+      animation: blink .9s step-end infinite;
+    }
+
+    @keyframes blink {
+      50% {
+        opacity: 0;
+      }
+    }
+
+    /* ── CTA banner ── */
+    .cta-banner {
+      background: linear-gradient(135deg, rgba(88, 166, 255, .08), rgba(188, 140, 255, .08));
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .cta-banner .container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 80px 24px;
+    }
+
+    .cta-banner h2 {
+      font-size: clamp(28px, 4vw, 40px);
+      font-weight: 800;
+      letter-spacing: -.03em;
+      margin-bottom: 16px;
+    }
+
+    .cta-banner p {
+      font-size: 17px;
+      color: var(--muted);
+      margin-bottom: 36px;
+      max-width: 520px;
+    }
+
+    .cta-btns {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    /* ── Footer ── */
+    footer {
+      padding: 40px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .footer-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .footer-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .footer-logo {
+      font-weight: 700;
+      font-size: 15px;
+      color: var(--text);
+    }
+
+    .footer-sep {
+      color: var(--border);
+    }
+
+    .footer-tagline {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .footer-right {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    /* ── Responsive nav ── */
+    @media (max-width: 600px) {
+      .nav-links .nav-link {
+        display: none;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ── Nav ── -->
+  <nav>
+    <div class="nav-inner">
+      <a class="nav-logo" href="#">
+        <div class="nav-logo-icon">🗄</div>
+        TabDB Pro
+      </a>
+      <div class="nav-links">
+        <a class="nav-link" href="#features">Features</a>
+        <a class="nav-link" href="#for-who">Who is it for</a>
+        <a class="nav-link" href="#how">How it works</a>
+        <a class="btn-github" href="https://github.com/fabcam/TabDBPro" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path
+              d="M12 2C6.48 2 2 6.48 2 12c0 4.42 2.87 8.17 6.84 9.49.5.09.66-.22.66-.48v-1.69c-2.78.6-3.37-1.34-3.37-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.89 1.52 2.34 1.08 2.91.83.09-.65.35-1.08.63-1.33-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02A9.56 9.56 0 0 1 12 6.8c.85 0 1.71.11 2.51.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.16.58.67.48A10.01 10.01 0 0 0 22 12c0-5.52-4.48-10-10-10z" />
+          </svg>
+          GitHub
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ── Hero ── -->
+  <section class="hero">
+    <div class="hero-badge">
+      <span class="hero-badge-dot"></span>
+      Chrome DevTools Extension
+    </div>
+    <h1>Your database,<br><span class="grad-text">right where you debug.</span></h1>
+    <p class="hero-sub">
+      Query, browse and edit your MySQL or PostgreSQL database without leaving Chrome DevTools.
+      Stop switching between tools. Debug faster.
+    </p>
+    <div class="hero-ctas">
+      <a class="btn-primary" href="#how">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="4 17 10 11 4 5" />
+          <line x1="12" y1="19" x2="20" y2="19" />
+        </svg>
+        Get Started
+      </a>
+      <a class="btn-secondary" href="https://github.com/fabcam/TabDBPro" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <path
+            d="M12 2C6.48 2 2 6.48 2 12c0 4.42 2.87 8.17 6.84 9.49.5.09.66-.22.66-.48v-1.69c-2.78.6-3.37-1.34-3.37-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.89 1.52 2.34 1.08 2.91.83.09-.65.35-1.08.63-1.33-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02A9.56 9.56 0 0 1 12 6.8c.85 0 1.71.11 2.51.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.16.58.67.48A10.01 10.01 0 0 0 22 12c0-5.52-4.48-10-10-10z" />
+        </svg>
+        View on GitHub
+      </a>
+    </div>
+
+    <!-- Demo video inside browser chrome -->
+    <div class="demo-window">
+      <div class="window-chrome">
+        <div class="window-dots">
+          <div class="window-dot dot-red"></div>
+          <div class="window-dot dot-yellow"></div>
+          <div class="window-dot dot-green"></div>
+        </div>
+        <div class="window-url">localhost:3000 — Chrome DevTools › TabDB Pro</div>
+      </div>
+      <video class="demo-gif" src="images/demo.webm" autoplay loop muted playsinline
+        aria-label="TabDB Pro in action — querying a PostgreSQL database from Chrome DevTools"></video>
+    </div>
+  </section>
+
+  <!-- ── Network → SQL ── -->
+  <section class="net-feature" id="network">
+    <div class="container">
+      <div>
+        <div class="section-label">Killer feature</div>
+        <h2 class="section-title">From API request<br>to SQL query<br><span class="grad-text">in one click.</span></h2>
+        <p class="section-sub">
+          See a network request in the panel, click it, and instantly get a ready-to-run SQL query.
+          TabDB Pro parses the URL, extracts IDs and filters, matches against your real schema — and builds the WHERE
+          clause for you.
+        </p>
+        <p class="section-sub" style="margin-top:14px">
+          No more hunting through logs or guessing column names. Your API call <em>is</em> your query.
+        </p>
+      </div>
+      <div class="net-demo">
+        <div class="net-card">
+          <div class="net-card-label req-label">⇅ Network request captured</div>
+          <div class="net-request">
+            <span class="method-badge method-get">GET</span>
+            <span class="net-url">/api/v1/users/<span>by-project</span>/<span>a3f8-c291</span></span>
+          </div>
+          <div style="font-size:11px;color:#4a5568;font-family:var(--font-mono);margin-top:4px">Status: 200 · 84ms</div>
+        </div>
+
+        <div class="net-arrow">
+          <div class="net-arrow-line"></div>
+          <div class="net-arrow-icon">⇩</div>
+          <div class="net-arrow-line"></div>
+        </div>
+
+        <div class="net-card">
+          <div class="net-card-label sql-label">✦ Generated SQL — ready to run</div>
+          <div class="sql-result">
+            <span class="sql-kw">SELECT</span> <span style="color:#6e7a94">*</span> <span class="sql-kw">FROM</span>
+            <span class="sql-tbl">users</span>
+            <span class="sql-kw">WHERE</span> <span class="sql-col">project_id</span> <span
+              style="color:#c586c0">=</span> <span class="sql-val">'a3f8-c291'</span>;
+          </div>
+        </div>
+
+        <div style="font-size:12px;color:#4a5568;text-align:center">
+          Conditions are editable · Results are editable · FK navigation included
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Features ── -->
+  <section id="features">
+    <div class="container">
+      <div class="section-label">Everything you need</div>
+      <h2 class="section-title">Packed with features<br>built for real workflows.</h2>
+      <div class="features-grid">
+
+        <div class="feature-card">
+          <div class="feature-icon fi-blue">🔍</div>
+          <div class="feature-title">Zero context switching</div>
+          <div class="feature-desc">Lives inside Chrome DevTools. Debug your front end and your database in the same
+            window, same shortcut, same flow.</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon fi-teal">⇅</div>
+          <div class="feature-title">Network → SQL converter</div>
+          <div class="feature-desc">Capture every XHR/fetch request and convert it to a SQL query automatically.
+            Understand what your API fetches with a single click.</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon fi-green">✏️</div>
+          <div class="feature-title">Inline cell editing</div>
+          <div class="feature-desc">Click any cell to edit it. Changes are committed immediately with a real UPDATE
+            query. Full insert-row support too.</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon fi-purple">🔗</div>
+          <div class="feature-title">Foreign key navigation</div>
+          <div class="feature-desc">Arrow buttons on FK columns let you jump to related records in a new tab. Navigate
+            your data like a graph, not a flat list.</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon fi-yellow">⚡</div>
+          <div class="feature-title">Multi-connection support</div>
+          <div class="feature-desc">Switch between multiple MySQL or PostgreSQL connections and databases on the fly.
+            The last used connection is restored automatically on reopen.</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon fi-red">🔒</div>
+          <div class="feature-title">SSH tunnel for remote databases</div>
+          <div class="feature-desc">Connect through a bastion host with SSH key auth. Pick your key file with a native
+            file browser. TOFU host-key verification — no manual <code
+              style="font-size:11px;color:var(--teal)">known_hosts</code> setup needed.</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon fi-purple">🔐</div>
+          <div class="feature-title">Encrypted connection sharing</div>
+          <div class="feature-desc">Export any subset of connections — SSH keys included — as an AES-256-GCM encrypted
+            <code style="font-size:11px;color:var(--teal)">.tabdbpro</code> file. Share it freely; share the passphrase
+            through a separate secure channel. Teammates import in one click.</div>
+        </div>
+
+      </div>
+
+      <!-- Secondary features row -->
+      <div class="features-grid cols-4" style="margin-top: 16px;">
+        <div class="feature-card" style="padding:18px">
+          <div style="font-size:20px;margin-bottom:8px">📋</div>
+          <div class="feature-title" style="font-size:13px">Saved Queries</div>
+          <div class="feature-desc" style="font-size:12px">Star any query, name it, load it with one click. Shared per
+            browser profile.</div>
+        </div>
+        <div class="feature-card" style="padding:18px">
+          <div style="font-size:20px;margin-bottom:8px">🕐</div>
+          <div class="feature-title" style="font-size:13px">Query History</div>
+          <div class="feature-desc" style="font-size:12px">Every query you run is saved. Jump back to any previous
+            execution instantly.</div>
+        </div>
+        <div class="feature-card" style="padding:18px">
+          <div style="font-size:20px;margin-bottom:8px">🔴</div>
+          <div class="feature-title" style="font-size:13px">Read-only per connection</div>
+          <div class="feature-desc" style="font-size:12px">Lock production, keep dev editable. Per-connection
+            granularity — accidents are impossible by design.</div>
+        </div>
+        <div class="feature-card" style="padding:18px">
+          <div style="font-size:20px;margin-bottom:8px">🌗</div>
+          <div class="feature-title" style="font-size:13px">Auto Dark / Light</div>
+          <div class="feature-desc" style="font-size:12px">Follows your system theme. Looks native whether you're a
+            dark-mode purist or not.</div>
+        </div>
+        <div class="feature-card" style="padding:18px">
+          <div style="font-size:20px;margin-bottom:8px">↔️</div>
+          <div class="feature-title" style="font-size:13px">Resizable Panels</div>
+          <div class="feature-desc" style="font-size:12px">Drag to resize every pane — sidebar, editor, results, network
+            panel, history.</div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── Audience ── -->
+  <section class="audience" id="for-who">
+    <div class="container">
+      <div class="section-label" style="text-align:center">Built for you</div>
+      <h2 class="section-title" style="text-align:center">Whoever you are,<br>it just <span
+          class="grad-text">fits.</span></h2>
+      <p class="section-sub" style="text-align:center;margin:0 auto">
+        Whether you rarely touch the database or live in it, TabDB Pro removes the friction so you can focus on what
+        matters.
+      </p>
+      <div class="audience-grid">
+
+        <div class="audience-card ac-front">
+          <div class="audience-persona">Frontend / Full-stack Dev</div>
+          <div class="audience-tagline">"I'm already in DevTools all day."</div>
+          <div class="audience-desc">
+            You debug the UI, you inspect network calls — why open a separate DB tool?
+            Now your database is one panel away.
+          </div>
+          <ul class="audience-bullets">
+            <li>See what data your API actually returns vs. what's in the DB</li>
+            <li>Click a failing request → get the SQL that feeds it</li>
+            <li>Navigate FK relationships without knowing the schema by heart</li>
+            <li>Edit seed data on the fly while iterating a feature</li>
+          </ul>
+        </div>
+
+        <div class="audience-card ac-back">
+          <div class="audience-persona">Backend Developer</div>
+          <div class="audience-tagline">"I want to debug, not configure."</div>
+          <div class="audience-desc">
+            No more switching between terminal, TablePlus, and the browser.
+            All your connections — local or remote — all your queries, one place.
+          </div>
+          <ul class="audience-bullets">
+            <li>Multi-connection support — dev, staging, read replicas</li>
+            <li>SSH tunnel to reach databases behind a bastion, zero extra setup</li>
+            <li>Share connection configs with the team — encrypted, one file</li>
+            <li>Run arbitrary SQL with a real editor and keyboard shortcuts</li>
+            <li>Inline editing to fix data issues without a migration</li>
+            <li>Read-only lock on production — accidents-proof by design</li>
+          </ul>
+        </div>
+
+        <div class="audience-card ac-qa">
+          <div class="audience-persona">QA / Tester</div>
+          <div class="audience-tagline">"I need to verify state, not write queries."</div>
+          <div class="audience-desc">
+            Test an API flow and instantly check if the database reflects the expected state — no SQL expertise
+            required.
+          </div>
+          <ul class="audience-bullets">
+            <li>Click any network request to query the data behind it</li>
+            <li>Browse tables visually with full schema tree</li>
+            <li>Save verification queries for your test checklist</li>
+            <li>Spot wrong data in the DB before filing a vague bug report</li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ── How it works ── -->
+  <section class="how" id="how">
+    <div class="container">
+      <div>
+        <div class="section-label">Setup in minutes</div>
+        <h2 class="section-title">From zero to querying<br>in <span class="grad-text">3 steps.</span></h2>
+        <div class="steps">
+          <div class="step">
+            <div class="step-number">1</div>
+            <div class="step-content">
+              <div class="step-title">Run the bridge</div>
+              <div class="step-desc">A tiny Node.js server sits between the extension and your database. No config files
+                needed — everything is set from the extension UI.</div>
+              <div class="step-code">cd bridge &amp;&amp; npm install &amp;&amp; npm start</div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-number">2</div>
+            <div class="step-content">
+              <div class="step-title">Load the extension</div>
+              <div class="step-desc">Open Chrome, go to <code
+                  style="font-family:var(--font-mono);font-size:12px;color:var(--teal)">chrome://extensions</code>,
+                enable Developer Mode, and load the <code
+                  style="font-family:var(--font-mono);font-size:12px;color:var(--teal)">extension/</code> folder.</div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-number">3</div>
+            <div class="step-content">
+              <div class="step-title">Configure &amp; connect</div>
+              <div class="step-desc">Open DevTools on any page, go to the <strong>TabDB Pro</strong> tab, hit Settings,
+                add your database connection and run your first query.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Terminal mockup -->
+      <div class="terminal">
+        <div class="terminal-header">
+          <div class="terminal-dots">
+            <div class="window-dot dot-red"></div>
+            <div class="window-dot dot-yellow"></div>
+            <div class="window-dot dot-green"></div>
+          </div>
+          <div class="terminal-title">zsh — bridge</div>
+        </div>
+        <div class="terminal-body">
+          <div><span class="t-prompt">~/projects/myapp/bridge</span> <span class="t-cmd">$</span> npm start</div>
+          <div class="t-out">&nbsp;</div>
+          <div class="t-out">&gt; tabdb-pro-bridge@1.0.0 start</div>
+          <div class="t-out">&gt; node src/index.js</div>
+          <div class="t-out">&nbsp;</div>
+          <div class="t-ok">✓ Bridge listening on http://localhost:27182</div>
+          <div class="t-out">&nbsp;</div>
+          <div class="t-out">Waiting for extension to connect...</div>
+          <div class="t-ok">✓ Connected · production_db (PostgreSQL)</div>
+          <div class="t-out"> Tables: 24 · Read-only: false</div>
+          <div class="t-out">&nbsp;</div>
+          <div class="t-out">GET /health 200 2ms</div>
+          <div class="t-out">POST /query 200 14ms</div>
+          <div class="t-out">POST /query 200 9ms</div>
+          <div class="t-out">POST /query 200 31ms</div>
+          <div class="t-out"><span class="t-cursor"></span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── CTA ── -->
+  <section class="cta-banner">
+    <div class="container">
+      <h2>Stop switching tabs.<br><span class="grad-text">Start shipping faster.</span></h2>
+      <p>Open source, free forever. Your database, your rules.</p>
+      <div class="cta-btns">
+        <a class="btn-primary" href="https://github.com/fabcam/TabDBPro" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path
+              d="M12 2C6.48 2 2 6.48 2 12c0 4.42 2.87 8.17 6.84 9.49.5.09.66-.22.66-.48v-1.69c-2.78.6-3.37-1.34-3.37-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.89 1.52 2.34 1.08 2.91.83.09-.65.35-1.08.63-1.33-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02A9.56 9.56 0 0 1 12 6.8c.85 0 1.71.11 2.51.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.16.58.67.48A10.01 10.01 0 0 0 22 12c0-5.52-4.48-10-10-10z" />
+          </svg>
+          Clone on GitHub
+        </a>
+        <a class="btn-secondary" href="#how">Read the docs</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Footer ── -->
+  <footer>
+    <div class="footer-inner">
+      <div class="footer-left">
+        <span class="footer-logo">🗄 TabDB Pro</span>
+        <span class="footer-sep">·</span>
+        <span class="footer-tagline">Open source Chrome DevTools extension</span>
+      </div>
+      <div class="footer-right">
+        Built with ☕ · MIT License
+      </div>
+    </div>
+  </footer>
+
+</body>
+
+</html>

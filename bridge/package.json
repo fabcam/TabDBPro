@@ -1,0 +1,22 @@
+{
+  "name": "tabdb-pro-bridge",
+  "version": "0.1.0",
+  "description": "Local bridge service for TabDB Pro Chrome DevTools extension",
+  "type": "module",
+  "bin": {
+    "tabdb": "./bin/mydbclient.js"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.0",
+    "dotenv": "^16.4.5",
+    "fastify": "^5.8.5",
+    "mysql2": "^3.11.3",
+    "pg": "^8.13.1",
+    "pino-pretty": "^13.0.0",
+    "ssh2": "^1.17.0"
+  }
+}
