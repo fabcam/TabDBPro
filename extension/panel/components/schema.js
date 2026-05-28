@@ -1,11 +1,12 @@
 export class SchemaTree {
-  constructor({ dbListEl, tableListEl, dbLabelEl, onTableClick, onDescribeTable, onDatabaseSwitch }) {
+  constructor({ dbListEl, tableListEl, dbLabelEl, onTableClick, onDescribeTable, onDatabaseSwitch, onDbContextMenu }) {
     this.dbListEl = dbListEl;
     this.tableListEl = tableListEl;
     this.dbLabelEl = dbLabelEl;
     this.onTableClick = onTableClick;
     this.onDescribeTable = onDescribeTable;
     this.onDatabaseSwitch = onDatabaseSwitch;
+    this.onDbContextMenu = onDbContextMenu;
     this.activeTable = null;
     this.currentDb = null;
     this._tables = [];
@@ -46,6 +47,11 @@ export class SchemaTree {
       item.className = 'db-item' + (db === current ? ' active' : '');
       item.textContent = db;
       item.title = db;
+      item.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.onDbContextMenu?.({ dbName: db, x: e.clientX, y: e.clientY });
+      });
       item.addEventListener('click', async () => {
         if (db === this.currentDb) return;
         this._clearSwitchError();

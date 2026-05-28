@@ -50,7 +50,7 @@ export class SqlAutocomplete {
     if (!partial || partial.length < 1) { this._hide(); return; }
     const items = await this._suggest(partial, context, extra);
     if (!items.length) { this._hide(); return; }
-    this._currentWord = word;
+    this._currentWord = context === 'col_specific' ? partial : word;
     this._show(items);
   }
 

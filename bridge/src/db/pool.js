@@ -22,6 +22,19 @@ export function getCurrentDatabase() {
   return currentDatabaseOverride || config.connections[currentConnectionIndex]?.database || null;
 }
 
+export function getDumpConnectionParams() {
+  const conn = config.connections[currentConnectionIndex];
+  if (!conn) return null;
+  return {
+    type: conn.type,
+    host: tunnel ? '127.0.0.1' : conn.host,
+    port: tunnel ? tunnel.localPort : (conn.port ?? (conn.type === 'postgres' ? 5432 : 3306)),
+    user: conn.user,
+    password: conn.password,
+    database: currentDatabaseOverride || conn.database,
+  };
+}
+
 export async function getPool() {
   if (pool) return pool;
   const conn = config.connections[currentConnectionIndex];

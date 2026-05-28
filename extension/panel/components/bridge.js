@@ -48,4 +48,18 @@ export class BridgeClient {
   tables() { return this._fetch('/tables'); }
   tableSchema(name) { return this._fetch(`/tables/${encodeURIComponent(name)}`); }
   tableIndexes(name) { return this._fetch(`/tables/${encodeURIComponent(name)}/indexes`); }
+
+  async dumpDatabase(name) {
+    let res;
+    try {
+      res = await fetch(`${this.baseUrl}/databases/${encodeURIComponent(name)}/dump`);
+    } catch {
+      throw new Error('Cannot reach bridge at ' + this.baseUrl + '. Is it running?');
+    }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+    return res.blob();
+  }
 }

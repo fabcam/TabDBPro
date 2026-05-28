@@ -10,6 +10,7 @@ import { Settings, CONN_COLORS } from './components/settings.js';
 import { NetworkRequests } from './components/network-requests.js';
 import { makeResizable }     from './components/resize.js';
 import { SqlAutocomplete }  from './components/autocomplete.js';
+import { buildPivot, guessValueField } from './components/pivot.js';
 
 const BRIDGE_URL = 'http://127.0.0.1:47321';
 const bridge = new BridgeClient(BRIDGE_URL);
@@ -23,7 +24,14 @@ const btnSaveQuery = document.getElementById('btn-save-query');
 const selectLimit = document.getElementById('select-limit');
 const statusDot = document.getElementById('status-indicator');
 const statusText = document.getElementById('status-text');
-const resultsMeta = document.getElementById('results-meta');
+const resultsMeta     = document.getElementById('results-meta');
+const resultsMetaText = document.getElementById('results-meta-text');
+const btnPivot        = document.getElementById('btn-pivot');
+const pivotBar        = document.getElementById('pivot-bar');
+const pivotRowSel     = document.getElementById('pivot-row');
+const pivotColSel     = document.getElementById('pivot-col');
+const pivotValSel     = document.getElementById('pivot-val');
+const pivotAggSel     = document.getElementById('pivot-agg');
 const resultsEmpty = document.getElementById('results-empty');
 const resultsLoading = document.getElementById('results-loading');
 const resultsError = document.getElementById('results-error');
@@ -220,6 +228,7 @@ function _setMainTab(fields, rows, editable, callbacks, fkMap, metaText, keepFkT
 }
 
 function _switchTab(id) {
+  _pivotOff();
   activeTabId = id;
   _refreshTabBar();
   _renderActiveTab();
@@ -267,12 +276,30 @@ function _renderActiveTab() {
   const tab = tabStore.find(t => t.id === activeTabId);
   if (!tab) { showState('empty'); resultsMeta.classList.add('hidden'); return; }
 
+  // Pivot mode — non-editable tabs only
+  if (pivotActive && !tab.editable) {
+    const result = buildPivot(tab.fields, tab.rows, {
+      rowCol:   pivotRowSel.value,
+      colCol:   pivotColSel.value,
+      valueCol: pivotValSel.value,
+      agg:      pivotAggSel.value,
+    });
+    if (result) {
+      resultsTable.render(result.pivotFields, result.pivotRows);
+      resultsMetaText.textContent = `${tab.metaText} · pivot ${result.stats}`;
+      resultsMeta.classList.remove('hidden');
+      showState('table');
+      return;
+    }
+  }
+
   if (tab.editable && tab.callbacks) {
     resultsTable.renderEditable(tab.fields, tab.rows, tab.callbacks);
   } else {
     resultsTable.render(tab.fields, tab.rows, { fkMap: tab.fkMap, onFkClick: handleFkClick });
   }
-  resultsMeta.textContent = tab.metaText;
+  resultsMetaText.textContent = tab.metaText;
+  btnPivot.disabled = !!tab.editable;
   resultsMeta.classList.remove('hidden');
   showState('table');
 }
@@ -337,6 +364,71 @@ contextMenu
   })
   .on('copy', ({ tableName }) => navigator.clipboard.writeText(tableName));
 
+// ── Pivot table ──
+let pivotActive = false;
+
+function _pivotOn() {
+  const tab = tabStore.find(t => t.id === activeTabId);
+  if (!tab || tab.editable) return;
+  // Populate selects with current tab's field names
+  const opts = tab.fields.map(f => `<option value="${f.name}">${f.name}</option>`).join('');
+  pivotRowSel.innerHTML = opts;
+  pivotColSel.innerHTML = opts;
+  pivotValSel.innerHTML = opts;
+  if (tab.fields.length > 0) pivotRowSel.value = tab.fields[0].name;
+  if (tab.fields.length > 1) pivotColSel.value = tab.fields[1].name;
+  const valGuess = guessValueField(tab.fields) ?? (tab.fields[2] ?? tab.fields[0])?.name;
+  if (valGuess) pivotValSel.value = valGuess;
+  pivotActive = true;
+  pivotBar.classList.remove('hidden');
+  btnPivot.classList.add('active');
+  _renderActiveTab();
+}
+
+function _pivotOff() {
+  pivotActive = false;
+  pivotBar.classList.add('hidden');
+  btnPivot.classList.remove('active');
+  _renderActiveTab();
+}
+
+btnPivot.addEventListener('click', () => pivotActive ? _pivotOff() : _pivotOn());
+[pivotRowSel, pivotColSel, pivotValSel, pivotAggSel].forEach(s =>
+  s.addEventListener('change', () => { if (pivotActive) _renderActiveTab(); })
+);
+
+// ── Database context menu ──
+const dbContextMenu = new ContextMenu(document.getElementById('db-context-menu'));
+
+dbContextMenu.on('dump', async ({ dbName }) => {
+  const prevDotClass = statusDot.className;
+  const prevText = statusText.textContent;
+  statusDot.className = 'status-dot checking';
+  statusText.textContent = `Generating dump for ${dbName}…`;
+  try {
+    const blob = await bridge.dumpDatabase(dbName);
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const connCamel = currentConnection
+      .replace(/[^a-zA-Z0-9\s_-]/g, '')
+      .split(/[\s_-]+/)
+      .filter(Boolean)
+      .map((w, i) => i === 0 ? w.toLowerCase() : w[0].toUpperCase() + w.slice(1).toLowerCase())
+      .join('');
+    const filename = `${date}_${dbName}_${connCamel}.sql`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    showErrorModal(err.message);
+  } finally {
+    statusDot.className = prevDotClass;
+    statusText.textContent = prevText;
+  }
+});
+
 // ── Connection color helpers ──
 function getConnColor(name) {
   const c = settings.config.connections.find(c => c.name === name);
@@ -388,6 +480,9 @@ const schema = new SchemaTree({
   onDescribeTable: ({ tableName, x, y }) => {
     contextMenu.show(x, y, { tableName });
   },
+  onDbContextMenu: ({ dbName, x, y }) => {
+    dbContextMenu.show(x, y, { dbName });
+  },
   onDatabaseSwitch: (db) => {
     clearTableMetaCache();
     showState('empty');
@@ -405,8 +500,11 @@ let settingsAutoOpened = false;
 async function checkHealth() {
   setStatus('checking', 'Connecting to bridge...');
   try {
-    // On first connect, push saved config to the bridge then restore last connection
-    if (!bridgeWasConnected && settings.config.connections.length > 0) {
+    // Capture before any await so we know if this is an (re)connect or a steady-state poll.
+    const reconnecting = !bridgeWasConnected;
+
+    // On first connect / reconnect: push config and restore last-used connection.
+    if (reconnecting && settings.config.connections.length > 0) {
       try { await bridge.configure(settings.config); } catch {}
       const stored = await chrome.storage.local.get(LAST_CONN_KEY);
       const lastConn = stored[LAST_CONN_KEY];
@@ -425,10 +523,17 @@ async function checkHealth() {
 
     isReadOnly = data.readOnly;
     dbType = data.db.type;
-    currentConnection = data.connection ?? '';
     const writeLabel = isReadOnly ? 'read-only' : '✎ write';
     setStatus('connected', `${data.db.type} · ${writeLabel}`);
-    updateConnBadge(currentConnection, getConnColor(currentConnection));
+
+    // Only sync connection identity from the bridge on (re)connect.
+    // During steady-state polling we trust the locally-tracked value to avoid
+    // a race where a stale health response overwrites a user-initiated switch.
+    if (reconnecting) {
+      currentConnection = data.connection ?? '';
+      updateConnBadge(currentConnection, getConnColor(currentConnection));
+    }
+
     if (!bridgeWasConnected) {
       bridgeWasConnected = true;
       connectionSelector.load(bridge);
@@ -614,7 +719,6 @@ async function renderResults(result, sql, keepFkTabs = false) {
 
 // ── Show indexes ──
 async function showIndexes(tableName) {
-  showState('loading');
   try {
     const { indexes } = await bridge.tableIndexes(tableName);
     const fields = [
@@ -624,28 +728,43 @@ async function showIndexes(tableName) {
       { name: 'index_type', dataTypeID: 0 },
     ];
     const rows = indexes.map(i => [i.index_name, i.columns, i.type, i.index_type]);
-    _setMainTab(fields, rows, false, null, new Map(), `INDEXES ${tableName} · ${indexes.length} index${indexes.length !== 1 ? 'es' : ''}`);
+    _openSideTab(
+      `INDEXES ${tableName}`,
+      fields, rows,
+      `INDEXES ${tableName} · ${indexes.length} index${indexes.length !== 1 ? 'es' : ''}`,
+    );
   } catch (err) {
-    showState('error', err.message);
+    showErrorModal(err.message);
   }
 }
 
 // ── Describe table ──
 async function describeTable(tableName) {
-  showState('loading');
   try {
     const { columns } = await bridge.tableSchema(tableName);
     const fields = [
-      { name: 'column_name',   dataTypeID: 0 },
-      { name: 'data_type',     dataTypeID: 0 },
-      { name: 'is_nullable',   dataTypeID: 0 },
+      { name: 'column_name',    dataTypeID: 0 },
+      { name: 'data_type',      dataTypeID: 0 },
+      { name: 'is_nullable',    dataTypeID: 0 },
       { name: 'column_default', dataTypeID: 0 },
     ];
     const rows = columns.map(c => [c.column_name, c.data_type, c.is_nullable, c.column_default]);
-    _setMainTab(fields, rows, false, null, new Map(), `DESCRIBE ${tableName} · ${columns.length} column${columns.length !== 1 ? 's' : ''}`);
+    _openSideTab(
+      `DESCRIBE ${tableName}`,
+      fields, rows,
+      `DESCRIBE ${tableName} · ${columns.length} column${columns.length !== 1 ? 's' : ''}`,
+    );
   } catch (err) {
-    showState('error', err.message);
+    showErrorModal(err.message);
   }
+}
+
+function _openSideTab(label, fields, rows, metaText) {
+  const tabId = ++tabIdSeq;
+  tabStore.push({ id: tabId, label, fields, rows, editable: false, callbacks: null, fkMap: new Map(), metaText });
+  activeTabId = tabId;
+  _refreshTabBar();
+  _renderActiveTab();
 }
 
 function showState(state, errorMsg) {
@@ -733,6 +852,12 @@ document.addEventListener('keydown', (e) => {
   const histPanel = document.getElementById('history-panel');
   histPanel.insertBefore(histHandle, histPanel.firstChild);
   makeResizable(histHandle, histPanel, 'y', { invert: true, min: 80 });
+
+  // Saved queries top edge (drag up to grow)
+  const savedList = document.getElementById('saved-query-list');
+  const savedHandle = handle('resize-handle resize-h-y');
+  savedList.previousElementSibling.before(savedHandle);
+  makeResizable(savedHandle, savedList, 'y', { invert: true, min: 40 });
 })();
 
 // ── Autocomplete ──

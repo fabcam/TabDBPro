@@ -113,11 +113,15 @@ export class Settings {
 
         actions.appendChild(upBtn);
         actions.appendChild(downBtn);
-        actions.appendChild(btn('Edit', 'btn-sm', () => {
-          this._editIdx = i;
-          this._draft = { ...this._config.connections[i] };
-          this._render();
-        }));
+        if (c.imported) {
+          actions.appendChild(text('span', 'imported', 'conn-imported-badge'));
+        } else {
+          actions.appendChild(btn('Edit', 'btn-sm', () => {
+            this._editIdx = i;
+            this._draft = { ...this._config.connections[i] };
+            this._render();
+          }));
+        }
         actions.appendChild(btn('Delete', 'btn-sm btn-danger', () => {
           if (confirm(`Delete "${c.name}"?`)) {
             this._config.connections.splice(i, 1);
@@ -478,7 +482,7 @@ export class Settings {
     pwWrap.append(pwEl, _eyeBtn(pwEl));
 
     const info = el('div', 'settings-info-box');
-    info.textContent = 'Connections with the same name will be updated. New connections will be added.';
+    info.textContent = 'Imported connections are read-only and cannot be edited, only deleted. If a name already exists, a numeric suffix will be added automatically.';
 
     form.append(field('', fileInfo), field('Passphrase', pwWrap), field('', info));
     this._body.appendChild(form);
@@ -494,9 +498,8 @@ export class Settings {
       try {
         const imported = await decryptConnections(this._importFileContent, passphrase);
         for (const conn of imported) {
-          const idx = this._config.connections.findIndex(c => c.name === conn.name);
-          if (idx >= 0) this._config.connections[idx] = conn;
-          else          this._config.connections.push(conn);
+          const name = _uniqueName(conn.name, this._config.connections);
+          this._config.connections.push({ ...conn, name, imported: true });
         }
         this._importFileContent = null;
         this._importFileName    = '';
@@ -569,6 +572,13 @@ function field(label, control) {
 function setTestStatus(el, state, message) {
   el.className = `test-status test-status-${state}`;
   el.textContent = message;
+}
+
+function _uniqueName(base, existing) {
+  if (!existing.some(c => c.name === base)) return base;
+  let i = 2;
+  while (existing.some(c => c.name === `${base}_${i}`)) i++;
+  return `${base}_${i}`;
 }
 
 function _eyeBtn(inputEl) {

@@ -20,6 +20,7 @@ Chrome DevTools Panel  →  Local Bridge (Node.js)  →  Your Database
 - **Zero context switching** — lives inside Chrome DevTools, where you already are
 - **Network → SQL converter** — click any captured XHR/fetch request to instantly generate a WHERE-clause query based on the URL params and path segments
 - **SSH tunnel support** — connect to remote databases through a bastion host; TOFU host-key verification (no manual `known_hosts` setup)
+- **Database dump** — right-click any database in the sidebar to download a `.sql` backup via `pg_dump` / `mysqldump`; no extra config, just needs the tool in PATH
 - **Inline cell editing** — click any cell to edit it; changes commit with a real `UPDATE`
 - **Insert rows** — sticky insert row at the bottom of every result table
 - **FK navigation** — arrow buttons on foreign key columns jump to the related record in a new tab, following the relationship chain
@@ -108,7 +109,7 @@ Use **Test SSH** to verify the tunnel before saving, and **Test connection** to 
 | Area | Behaviour |
 |---|---|
 | **Connection** | Only visible when multiple connections are configured. Click to switch. |
-| **Database** | Lists all databases. Active one shown first; click **Show N more…** to expand the rest. |
+| **Database** | Lists all databases. Active one shown first; click **Show N more…** to expand the rest. Right-click any database to download a `.sql` dump. |
 | **Tables** | Single-click to highlight; double-click to run `SELECT *` in a new tab. Right-click for context menu. |
 | **Saved** | Click to open a saved query. Hover to reveal the delete button. |
 

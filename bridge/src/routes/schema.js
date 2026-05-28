@@ -76,4 +76,21 @@ export async function schemaRoutes(fastify) {
       reply.status(status).send({ ok: false, error: err.message });
     }
   });
+
+  // ── Dump ──
+  fastify.get('/databases/:name/dump', async (req, reply) => {
+    const { name } = req.params;
+    if (!validIdentifier(name)) {
+      return reply.status(400).send({ ok: false, error: 'Invalid database name' });
+    }
+    try {
+      const { dumpDatabase } = await import('../db/dump.js');
+      const data = await dumpDatabase(name);
+      reply.header('Content-Type', 'application/sql');
+      reply.header('Content-Disposition', `attachment; filename="${name}.sql"`);
+      reply.send(data);
+    } catch (err) {
+      reply.status(500).send({ ok: false, error: err.message });
+    }
+  });
 }
