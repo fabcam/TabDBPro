@@ -6,3 +6,7 @@ bridge/.env.local
 bridge/data/known_hosts.json
 data/known_hosts.json
 .claude/
+
+# Build output y paquetes distribuibles
+bridge/dist/
+release/

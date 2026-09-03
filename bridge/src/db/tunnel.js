@@ -6,7 +6,9 @@ import { resolve, dirname } from 'path';
 import { homedir } from 'os';
 import { fileURLToPath } from 'url';
 
-const DATA_DIR       = resolve(fileURLToPath(import.meta.url), '../../../../data');
+const DATA_DIR = process.pkg
+  ? resolve(dirname(process.execPath), 'data')
+  : resolve(fileURLToPath(import.meta.url), '../../../../data');
 const KNOWN_HOSTS    = resolve(DATA_DIR, 'known_hosts.json');
 
 export function expandPath(p) {
