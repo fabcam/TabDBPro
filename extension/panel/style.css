@@ -994,6 +994,7 @@ tr:hover .fk-nav-btn { opacity: 0.7; }
   flex-direction: column;
   gap: 2px;
   flex: 1;
+  min-width: 0;   /* permite que las filas trunquen dentro del .settings-field flex */
 }
 .export-toggle-row {
   margin-bottom: 4px;
