@@ -1114,6 +1114,70 @@
       }
     }
 
+    /* ── Downloads / Versions ── */
+    .release-list {
+      margin-top: 48px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .release-item {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 22px 24px;
+      transition: border-color .2s;
+    }
+
+    .release-item:hover {
+      border-color: rgba(88, 166, 255, .4);
+    }
+
+    .release-head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+
+    .release-ver {
+      font-family: var(--font-mono);
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .release-date {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .release-badge {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--green);
+      background: rgba(63, 185, 80, .12);
+      border: 1px solid rgba(63, 185, 80, .3);
+      padding: 2px 8px;
+      border-radius: 100px;
+    }
+
+    .release-notes {
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.65;
+      margin-bottom: 12px;
+    }
+
+    .release-link {
+      font-size: 13.5px;
+      font-weight: 600;
+    }
+
     /* ── CTA banner ── */
     .cta-banner {
       background: linear-gradient(135deg, rgba(88, 166, 255, .08), rgba(188, 140, 255, .08));
@@ -1214,7 +1278,7 @@
       <div class="nav-links">
         <a class="nav-link" href="#features">Features</a>
         <a class="nav-link" href="#for-who">Who is it for</a>
-        <a class="nav-link" href="#how">How it works</a>
+        <a class="nav-link" href="#download">Download</a>
         <a class="btn-github" href="https://github.com/fabcam/TabDBPro" target="_blank" rel="noopener">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
             <path
@@ -1238,12 +1302,13 @@
       Stop switching between tools. Debug faster.
     </p>
     <div class="hero-ctas">
-      <a class="btn-primary" href="#how">
+      <a class="btn-primary" href="#download">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <polyline points="4 17 10 11 4 5" />
-          <line x1="12" y1="19" x2="20" y2="19" />
+          <path d="M12 3v12" />
+          <polyline points="7 10 12 15 17 10" />
+          <line x1="5" y1="21" x2="19" y2="21" />
         </svg>
-        Get Started
+        Download
       </a>
       <a class="btn-secondary" href="https://github.com/fabcam/TabDBPro" target="_blank" rel="noopener">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -1375,6 +1440,28 @@
             through a separate secure channel. Teammates import in one click.</div>
         </div>
 
+        <div class="feature-card">
+          <div class="feature-icon fi-blue">🗺️</div>
+          <div class="feature-title">Schema ER diagram</div>
+          <div class="feature-desc">Right-click a database to open a visual map of its tables and foreign-key
+            relationships. Auto-layout, drag, pan &amp; zoom, click a table to query it — and export the whole diagram
+            as SVG.</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon fi-green">📤</div>
+          <div class="feature-title">Export query results</div>
+          <div class="feature-desc">Turn any result set into a <strong>CSV</strong>, <strong>JSON</strong> or ready-to-run
+            <strong>INSERT</strong> script with one click. The table name is inferred from your query.</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon fi-yellow">🎨</div>
+          <div class="feature-title">Filter connections by color</div>
+          <div class="feature-desc">Tag connections with colors and filter the sidebar to just one — instantly focus on
+            prod, staging or a client's set when you juggle many connections.</div>
+        </div>
+
       </div>
 
       <!-- Secondary features row -->
@@ -1482,70 +1569,42 @@
     </div>
   </section>
 
-  <!-- ── How it works ── -->
-  <section class="how" id="how">
+  <!-- ── Download / Versions ── -->
+  <section class="downloads" id="download">
     <div class="container">
-      <div>
-        <div class="section-label">Setup in minutes</div>
-        <h2 class="section-title">From zero to querying<br>in <span class="grad-text">3 steps.</span></h2>
-        <div class="steps">
-          <div class="step">
-            <div class="step-number">1</div>
-            <div class="step-content">
-              <div class="step-title">Run the bridge</div>
-              <div class="step-desc">A tiny Node.js server sits between the extension and your database. No config files
-                needed — everything is set from the extension UI.</div>
-              <div class="step-code">cd bridge &amp;&amp; npm install &amp;&amp; npm start</div>
-            </div>
-          </div>
-          <div class="step">
-            <div class="step-number">2</div>
-            <div class="step-content">
-              <div class="step-title">Load the extension</div>
-              <div class="step-desc">Open Chrome, go to <code
-                  style="font-family:var(--font-mono);font-size:12px;color:var(--teal)">chrome://extensions</code>,
-                enable Developer Mode, and load the <code
-                  style="font-family:var(--font-mono);font-size:12px;color:var(--teal)">extension/</code> folder.</div>
-            </div>
-          </div>
-          <div class="step">
-            <div class="step-number">3</div>
-            <div class="step-content">
-              <div class="step-title">Configure &amp; connect</div>
-              <div class="step-desc">Open DevTools on any page, go to the <strong>TabDB Pro</strong> tab, hit Settings,
-                add your database connection and run your first query.</div>
-            </div>
-          </div>
-        </div>
+      <div class="section-label">Download</div>
+      <h2 class="section-title">Grab the latest<br><span class="grad-text">release.</span></h2>
+      <p class="section-sub">
+        macOS (Apple Silicon &amp; Intel). Download the release, run <code
+          style="font-family:var(--font-mono);font-size:13px;color:var(--teal)">./install.sh</code>, load the
+        extension — no code, no Node setup required.
+      </p>
+
+      <div style="margin-top:28px">
+        <a class="btn-primary" href="https://github.com/fabcam/TabDBPro/releases/latest" target="_blank"
+          rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M12 3v12" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="5" y1="21" x2="19" y2="21" />
+          </svg>
+          Download latest
+        </a>
       </div>
 
-      <!-- Terminal mockup -->
-      <div class="terminal">
-        <div class="terminal-header">
-          <div class="terminal-dots">
-            <div class="window-dot dot-red"></div>
-            <div class="window-dot dot-yellow"></div>
-            <div class="window-dot dot-green"></div>
+      <div class="release-list">
+        <div class="release-item">
+          <div class="release-head">
+            <span class="release-ver">v0.2.0</span>
+            <span class="release-date">Sep 14, 2026</span>
+            <span class="release-badge">Latest</span>
           </div>
-          <div class="terminal-title">zsh — bridge</div>
-        </div>
-        <div class="terminal-body">
-          <div><span class="t-prompt">~/projects/myapp/bridge</span> <span class="t-cmd">$</span> npm start</div>
-          <div class="t-out">&nbsp;</div>
-          <div class="t-out">&gt; tabdb-pro-bridge@1.0.0 start</div>
-          <div class="t-out">&gt; node src/index.js</div>
-          <div class="t-out">&nbsp;</div>
-          <div class="t-ok">✓ Bridge listening on http://localhost:27182</div>
-          <div class="t-out">&nbsp;</div>
-          <div class="t-out">Waiting for extension to connect...</div>
-          <div class="t-ok">✓ Connected · production_db (PostgreSQL)</div>
-          <div class="t-out"> Tables: 24 · Read-only: false</div>
-          <div class="t-out">&nbsp;</div>
-          <div class="t-out">GET /health 200 2ms</div>
-          <div class="t-out">POST /query 200 14ms</div>
-          <div class="t-out">POST /query 200 9ms</div>
-          <div class="t-out">POST /query 200 31ms</div>
-          <div class="t-out"><span class="t-cursor"></span></div>
+          <p class="release-notes">
+            Schema ER diagram (from the database menu) with SVG export · Export query results to CSV / JSON / INSERT ·
+            Filter connections by color · Bridge runs as a macOS service (starts at login).
+          </p>
+          <a class="release-link" href="https://github.com/fabcam/TabDBPro/releases/tag/v0.2.0" target="_blank"
+            rel="noopener">View release on GitHub ↗</a>
         </div>
       </div>
     </div>
@@ -1564,7 +1623,7 @@
           </svg>
           Clone on GitHub
         </a>
-        <a class="btn-secondary" href="#how">Read the docs</a>
+        <a class="btn-secondary" href="#download">Download</a>
       </div>
     </div>
   </section>
