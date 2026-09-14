@@ -48,6 +48,7 @@ export class BridgeClient {
   tables() { return this._fetch('/tables'); }
   tableSchema(name) { return this._fetch(`/tables/${encodeURIComponent(name)}`); }
   tableIndexes(name) { return this._fetch(`/tables/${encodeURIComponent(name)}/indexes`); }
+  schemaGraph() { return this._fetch('/schema/graph'); }
 
   async dumpDatabase(name) {
     let res;

@@ -1,4 +1,4 @@
-import { getDatabases, getTables, getTableSchema, getTableIndexes } from '../db/schema.js';
+import { getDatabases, getTables, getTableSchema, getTableIndexes, getSchemaGraph } from '../db/schema.js';
 import { switchDatabase, switchConnection, getCurrentDatabase, getCurrentConnectionName } from '../db/pool.js';
 import { config } from '../config.js';
 
@@ -74,6 +74,16 @@ export async function schemaRoutes(fastify) {
     } catch (err) {
       const status = err.message === 'Invalid table name' ? 400 : 500;
       reply.status(status).send({ ok: false, error: err.message });
+    }
+  });
+
+  // ── Grafo del schema (diagrama ER) ──
+  fastify.get('/schema/graph', async (req, reply) => {
+    try {
+      const graph = await getSchemaGraph();
+      return { ok: true, ...graph };
+    } catch (err) {
+      reply.status(500).send({ ok: false, error: err.message });
     }
   });
 

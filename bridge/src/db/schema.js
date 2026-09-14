@@ -141,3 +141,96 @@ export async function getTableSchema(tableName) {
     return rows;
   }
 }
+
+// Devuelve el grafo completo del schema actual para el diagrama ER:
+//   { tables: [{ name, columns: [{ name, type, nullable, pk, fk }] }],
+//     relationships: [{ name, sourceTable, sourceColumn, targetTable, targetColumn }] }
+// Usa queries bulk (una por columnas / PKs / FKs) en vez de N llamadas por tabla.
+export async function getSchemaGraph() {
+  const pool = await getPool();
+  const type = getCurrentConnType();
+
+  let colRows, pkRows, fkRows;
+
+  if (type === 'postgres') {
+    ({ rows: colRows } = await pool.query(`
+      SELECT c.table_name, c.column_name, c.data_type, c.is_nullable
+      FROM information_schema.columns c
+      JOIN information_schema.tables t
+        ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+      WHERE c.table_schema = 'public' AND t.table_type = 'BASE TABLE'
+      ORDER BY c.table_name, c.ordinal_position
+    `));
+    ({ rows: pkRows } = await pool.query(`
+      SELECT tc.table_name, kcu.column_name
+      FROM information_schema.table_constraints tc
+      JOIN information_schema.key_column_usage kcu
+        ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+      WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = 'public'
+    `));
+    ({ rows: fkRows } = await pool.query(`
+      SELECT tc.constraint_name AS name,
+             tc.table_name      AS source_table,
+             kcu.column_name    AS source_column,
+             ccu.table_name     AS target_table,
+             ccu.column_name    AS target_column
+      FROM information_schema.table_constraints        tc
+      JOIN information_schema.key_column_usage         kcu
+        ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+      JOIN information_schema.constraint_column_usage  ccu
+        ON tc.constraint_name = ccu.constraint_name AND tc.table_schema = ccu.table_schema
+      WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = 'public'
+    `));
+  } else {
+    [colRows] = await pool.execute(`
+      SELECT c.TABLE_NAME AS table_name, c.COLUMN_NAME AS column_name,
+             c.DATA_TYPE AS data_type, c.IS_NULLABLE AS is_nullable
+      FROM information_schema.COLUMNS c
+      JOIN information_schema.TABLES t
+        ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME
+      WHERE c.TABLE_SCHEMA = DATABASE() AND t.TABLE_TYPE = 'BASE TABLE'
+      ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION
+    `);
+    [pkRows] = await pool.execute(`
+      SELECT TABLE_NAME AS table_name, COLUMN_NAME AS column_name
+      FROM information_schema.KEY_COLUMN_USAGE
+      WHERE TABLE_SCHEMA = DATABASE() AND CONSTRAINT_NAME = 'PRIMARY'
+    `);
+    [fkRows] = await pool.execute(`
+      SELECT CONSTRAINT_NAME        AS name,
+             TABLE_NAME             AS source_table,
+             COLUMN_NAME            AS source_column,
+             REFERENCED_TABLE_NAME  AS target_table,
+             REFERENCED_COLUMN_NAME AS target_column
+      FROM information_schema.KEY_COLUMN_USAGE
+      WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME IS NOT NULL
+    `);
+  }
+
+  const pkSet = new Set(pkRows.map((r) => `${r.table_name}.${r.column_name}`));
+  const fkSet = new Set(fkRows.map((r) => `${r.source_table}.${r.source_column}`));
+
+  const tableMap = new Map();
+  for (const r of colRows) {
+    if (!tableMap.has(r.table_name)) tableMap.set(r.table_name, []);
+    const key = `${r.table_name}.${r.column_name}`;
+    tableMap.get(r.table_name).push({
+      name: r.column_name,
+      type: r.data_type,
+      nullable: r.is_nullable === 'YES',
+      pk: pkSet.has(key),
+      fk: fkSet.has(key),
+    });
+  }
+
+  const tables = [...tableMap.entries()].map(([name, columns]) => ({ name, columns }));
+  const relationships = fkRows.map((r) => ({
+    name: r.name,
+    sourceTable: r.source_table,
+    sourceColumn: r.source_column,
+    targetTable: r.target_table,
+    targetColumn: r.target_column,
+  }));
+
+  return { tables, relationships };
+}

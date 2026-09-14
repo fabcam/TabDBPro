@@ -55,6 +55,7 @@
             <option value="0">No limit</option>
           </select>
         </label>
+        <button id="btn-erd" class="icon-btn" title="Schema diagram">⬡</button>
         <button id="btn-network" class="icon-btn" title="Network requests">⇅</button>
         <button id="btn-save-query" class="icon-btn" title="Save current query (Ctrl+S)">★</button>
         <button id="btn-run" class="btn-primary" title="Run query (Ctrl+Enter)">▶ Run</button>
@@ -113,6 +114,9 @@
         </div>
         <div class="net-list"></div>
       </div>
+
+      <!-- Schema diagram (ER) panel -->
+      <div id="erd-panel" class="hidden"></div>
 
       <!-- History panel -->
       <div id="history-panel" class="hidden">

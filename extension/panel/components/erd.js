@@ -1,0 +1,396 @@
+// Diagrama ER: renderiza el grafo del schema (tablas + relaciones FK) como un
+// canvas pan/zoomeable con nodos arrastrables. Vanilla JS + SVG (sin dependencias,
+// compatible con la CSP de MV3).
+
+const NODE_W     = 220;   // ancho fijo de cada nodo-tabla
+const HEADER_H   = 30;    // alto del header de la tabla
+const ROW_H      = 22;    // alto de cada fila-columna
+const GAP_X      = 90;    // separación horizontal entre capas
+const GAP_Y      = 40;    // separación vertical entre nodos de una capa
+const WORLD      = 8000;  // tamaño del "mundo" SVG
+
+export class ERDiagram {
+  // opts: { panelEl, fetchGraph:()=>Promise, getContext:()=>({connection,database}),
+  //         onSelectTable:(name)=>void }
+  constructor(opts) {
+    this.o = opts;
+    this.nodes = new Map();       // name -> { x, y, columns, el }
+    this.rels = [];
+    this.transform = { s: 1, tx: 0, ty: 0 };
+    this.isOpen = false;
+    this._build();
+  }
+
+  // ── DOM base ──────────────────────────────────────────────────────────────
+  _build() {
+    const p = this.o.panelEl;
+    p.classList.add('erd-panel');
+    p.innerHTML = `
+      <div class="erd-header">
+        <span class="erd-title">Schema diagram</span>
+        <input class="erd-search" type="text" placeholder="Find table…" spellcheck="false">
+        <div class="erd-header-controls">
+          <button class="icon-btn erd-fit" title="Fit to screen">⤢ Fit</button>
+          <button class="icon-btn erd-reset" title="Reset layout">↺ Reset</button>
+          <button class="icon-btn erd-close" title="Close">✕</button>
+        </div>
+      </div>
+      <div class="erd-viewport">
+        <div class="erd-world">
+          <svg class="erd-edges" width="${WORLD}" height="${WORLD}"></svg>
+        </div>
+        <div class="erd-state erd-loading hidden">Loading schema…</div>
+        <div class="erd-state erd-empty hidden">No tables in this database.</div>
+        <div class="erd-state erd-error hidden"></div>
+      </div>`;
+
+    this.viewport = p.querySelector('.erd-viewport');
+    this.world    = p.querySelector('.erd-world');
+    this.svg      = p.querySelector('.erd-edges');
+    this.searchEl = p.querySelector('.erd-search');
+
+    p.querySelector('.erd-close').addEventListener('click', () => this.close());
+    p.querySelector('.erd-fit').addEventListener('click', () => this.fit());
+    p.querySelector('.erd-reset').addEventListener('click', () => this.resetLayout());
+    this.searchEl.addEventListener('input', () => this._focusSearch(this.searchEl.value));
+
+    this._wirePanZoom();
+  }
+
+  // ── Abrir / cerrar ─────────────────────────────────────────────────────────
+  async toggle() { this.isOpen ? this.close() : this.open(); }
+
+  async open() {
+    this.o.panelEl.classList.remove('hidden');
+    this.isOpen = true;
+    await this.load();
+  }
+
+  close() {
+    this.o.panelEl.classList.add('hidden');
+    this.isOpen = false;
+  }
+
+  async load() {
+    this._showState('loading');
+    let graph;
+    try {
+      graph = await this.o.fetchGraph();
+    } catch (err) {
+      this._showState('error', err.message || 'Failed to load schema');
+      return;
+    }
+    if (!graph?.tables?.length) { this._showState('empty'); return; }
+    await this._hydratePositions();
+    this._showState(null);
+    this._render(graph);
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────────
+  _render(graph) {
+    // limpiar nodos previos (dejar el svg)
+    this.world.querySelectorAll('.erd-node').forEach((n) => n.remove());
+    this.svg.innerHTML = '';
+    this.nodes.clear();
+    this.rels = graph.relationships || [];
+
+    const positions = this._autoLayout(graph);
+    const saved = this._loadPositions();
+
+    for (const t of graph.tables) {
+      const pos = saved[t.name] || positions[t.name] || { x: 0, y: 0 };
+      const el = this._nodeEl(t);
+      el.style.left = `${pos.x}px`;
+      el.style.top  = `${pos.y}px`;
+      this.world.appendChild(el);
+      this.nodes.set(t.name, { x: pos.x, y: pos.y, columns: t.columns, el });
+      this._makeDraggable(t.name, el);
+    }
+
+    this._drawEdges();
+    this.fit();
+  }
+
+  _nodeEl(t) {
+    const el = document.createElement('div');
+    el.className = 'erd-node';
+    el.style.width = `${NODE_W}px`;
+    el.dataset.table = t.name;
+
+    const header = document.createElement('div');
+    header.className = 'erd-node-header';
+    header.textContent = t.name;
+    header.title = `${t.name} — click para SELECT *`;
+    header.addEventListener('click', (e) => {
+      if (this._dragged) return;      // ignorar el click que cierra un drag
+      e.stopPropagation();
+      this.o.onSelectTable?.(t.name);
+    });
+    el.appendChild(header);
+
+    for (const c of t.columns) {
+      const row = document.createElement('div');
+      row.className = 'erd-col';
+      row.dataset.col = c.name;
+      const badge = c.pk ? '🔑' : (c.fk ? '🔗' : '');
+      row.innerHTML =
+        `<span class="erd-col-badge">${badge}</span>` +
+        `<span class="erd-col-name${c.pk ? ' pk' : ''}">${escapeHtml(c.name)}</span>` +
+        `<span class="erd-col-type">${escapeHtml(c.type)}</span>`;
+      el.appendChild(row);
+    }
+    return el;
+  }
+
+  // ── Layout automático por capas según FKs ──────────────────────────────────
+  _autoLayout(graph) {
+    const tables = graph.tables.map((t) => t.name);
+    const heightOf = (name) => {
+      const t = graph.tables.find((x) => x.name === name);
+      return HEADER_H + (t ? t.columns.length : 0) * ROW_H;
+    };
+    // adyacencia: source referencia target
+    const out = new Map(tables.map((t) => [t, new Set()]));
+    for (const r of graph.relationships || []) {
+      if (out.has(r.sourceTable) && r.targetTable !== r.sourceTable) {
+        out.get(r.sourceTable).add(r.targetTable);
+      }
+    }
+    // layer = 1 + max(layer de sus targets); con guarda de ciclos
+    const layer = new Map();
+    const visiting = new Set();
+    const calc = (t) => {
+      if (layer.has(t)) return layer.get(t);
+      if (visiting.has(t)) return 0;   // ciclo
+      visiting.add(t);
+      let mx = -1;
+      for (const dep of out.get(t)) mx = Math.max(mx, calc(dep));
+      visiting.delete(t);
+      const l = mx + 1;
+      layer.set(t, l);
+      return l;
+    };
+    for (const t of tables) calc(t);
+
+    // agrupar por capa y apilar verticalmente
+    const byLayer = new Map();
+    for (const t of tables) {
+      const l = layer.get(t);
+      if (!byLayer.has(l)) byLayer.set(l, []);
+      byLayer.get(l).push(t);
+    }
+    const pos = {};
+    for (const [l, group] of byLayer) {
+      group.sort();
+      let y = 40;
+      for (const t of group) {
+        pos[t] = { x: 40 + l * (NODE_W + GAP_X), y };
+        y += heightOf(t) + GAP_Y;
+      }
+    }
+    return pos;
+  }
+
+  // ── Aristas FK ─────────────────────────────────────────────────────────────
+  _drawEdges() {
+    this.svg.innerHTML = '';
+    for (const r of this.rels) {
+      const s = this.nodes.get(r.sourceTable);
+      const t = this.nodes.get(r.targetTable);
+      if (!s || !t) continue;
+      const sy = this._colY(s, r.sourceColumn);
+      const ty = this._colY(t, r.targetColumn);
+      const sLeft = s.x + NODE_W / 2 < t.x + NODE_W / 2;
+      const sx = sLeft ? s.x + NODE_W : s.x;
+      const tx = sLeft ? t.x : t.x + NODE_W;
+      const dx = sLeft ? 45 : -45;
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', `M ${sx} ${sy} C ${sx + dx} ${sy}, ${tx - dx} ${ty}, ${tx} ${ty}`);
+      path.setAttribute('class', 'erd-edge');
+      path.dataset.source = r.sourceTable;
+      path.dataset.target = r.targetTable;
+      this.svg.appendChild(path);
+    }
+  }
+
+  _colY(node, colName) {
+    const idx = node.columns.findIndex((c) => c.name === colName);
+    const i = idx < 0 ? 0 : idx;
+    return node.y + HEADER_H + i * ROW_H + ROW_H / 2;
+  }
+
+  // ── Drag de nodos ────────────────────────────────────────────────────────
+  _makeDraggable(name, el) {
+    const header = el.querySelector('.erd-node-header');
+    header.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const node = this.nodes.get(name);
+      const startX = e.clientX, startY = e.clientY;
+      const origX = node.x, origY = node.y;
+      this._dragged = false;
+      const move = (ev) => {
+        const dx = (ev.clientX - startX) / this.transform.s;
+        const dy = (ev.clientY - startY) / this.transform.s;
+        if (Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) > 3) this._dragged = true;
+        node.x = origX + dx;
+        node.y = origY + dy;
+        el.style.left = `${node.x}px`;
+        el.style.top  = `${node.y}px`;
+        this._drawEdges();
+      };
+      const up = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        if (this._dragged) this._savePositions();
+        setTimeout(() => { this._dragged = false; }, 0);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    });
+
+    el.addEventListener('pointerenter', () => this._highlight(name, true));
+    el.addEventListener('pointerleave', () => this._highlight(name, false));
+  }
+
+  _highlight(name, on) {
+    const related = new Set();
+    for (const r of this.rels) {
+      if (r.sourceTable === name) related.add(r.targetTable);
+      if (r.targetTable === name) related.add(r.sourceTable);
+    }
+    this.svg.querySelectorAll('.erd-edge').forEach((p) => {
+      const hit = p.dataset.source === name || p.dataset.target === name;
+      p.classList.toggle('active', on && hit);
+      p.classList.toggle('dim', on && !hit);
+    });
+    this.world.querySelectorAll('.erd-node').forEach((n) => {
+      const t = n.dataset.table;
+      const hit = t === name || related.has(t);
+      n.classList.toggle('dim', on && !hit);
+    });
+  }
+
+  // ── Pan / zoom ──────────────────────────────────────────────────────────────
+  _wirePanZoom() {
+    this.viewport.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.erd-node')) return;   // el nodo maneja su propio drag
+      const startX = e.clientX, startY = e.clientY;
+      const { tx, ty } = this.transform;
+      const move = (ev) => {
+        this.transform.tx = tx + (ev.clientX - startX);
+        this.transform.ty = ty + (ev.clientY - startY);
+        this._applyTransform();
+      };
+      const up = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    });
+
+    this.viewport.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const rect = this.viewport.getBoundingClientRect();
+      const px = e.clientX - rect.left, py = e.clientY - rect.top;
+      const old = this.transform.s;
+      const next = Math.min(2.5, Math.max(0.15, old * (e.deltaY < 0 ? 1.1 : 0.9)));
+      // zoom centrado en el cursor
+      this.transform.tx = px - (px - this.transform.tx) * (next / old);
+      this.transform.ty = py - (py - this.transform.ty) * (next / old);
+      this.transform.s = next;
+      this._applyTransform();
+    }, { passive: false });
+  }
+
+  _applyTransform() {
+    const { s, tx, ty } = this.transform;
+    this.world.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
+  }
+
+  fit() {
+    if (!this.nodes.size) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const [, n] of this.nodes) {
+      const h = HEADER_H + n.columns.length * ROW_H;
+      minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
+      maxX = Math.max(maxX, n.x + NODE_W); maxY = Math.max(maxY, n.y + h);
+    }
+    const pad = 40;
+    const vw = this.viewport.clientWidth, vh = this.viewport.clientHeight;
+    const w = maxX - minX + pad * 2, h = maxY - minY + pad * 2;
+    const s = Math.min(2, Math.max(0.15, Math.min(vw / w, vh / h)));
+    this.transform.s = s;
+    this.transform.tx = (vw - w * s) / 2 - (minX - pad) * s;
+    this.transform.ty = (vh - h * s) / 2 - (minY - pad) * s;
+    this._applyTransform();
+  }
+
+  _focusSearch(q) {
+    const term = q.trim().toLowerCase();
+    this.world.querySelectorAll('.erd-node').forEach((n) => {
+      const hit = term && n.dataset.table.toLowerCase().includes(term);
+      n.classList.toggle('match', !!hit);
+      n.classList.toggle('dim', !!term && !hit);
+    });
+    if (!term) {
+      this.world.querySelectorAll('.erd-node').forEach((n) => n.classList.remove('dim'));
+      return;
+    }
+    const first = [...this.nodes.entries()].find(([name]) => name.toLowerCase().includes(term));
+    if (first) this._centerOn(first[1]);
+  }
+
+  _centerOn(node) {
+    const vw = this.viewport.clientWidth, vh = this.viewport.clientHeight;
+    const h = HEADER_H + node.columns.length * ROW_H;
+    const s = this.transform.s;
+    this.transform.tx = vw / 2 - (node.x + NODE_W / 2) * s;
+    this.transform.ty = vh / 2 - (node.y + h / 2) * s;
+    this._applyTransform();
+  }
+
+  resetLayout() {
+    const key = this._posKey();
+    try { chrome.storage.local.remove(key); } catch {}
+    this.load();
+  }
+
+  // ── Persistencia de posiciones (por conexión::database) ─────────────────────
+  _posKey() {
+    const { connection, database } = this.o.getContext?.() || {};
+    return `erd_pos::${connection || '?'}::${database || '?'}`;
+  }
+  _loadPositions() {
+    try {
+      const raw = this._posCache;
+      return raw || {};
+    } catch { return {}; }
+  }
+  async _hydratePositions() {
+    try {
+      const r = await chrome.storage.local.get(this._posKey());
+      this._posCache = r[this._posKey()] || {};
+    } catch { this._posCache = {}; }
+  }
+  _savePositions() {
+    const data = {};
+    for (const [name, n] of this.nodes) data[name] = { x: Math.round(n.x), y: Math.round(n.y) };
+    this._posCache = data;
+    try { chrome.storage.local.set({ [this._posKey()]: data }); } catch {}
+  }
+
+  _showState(which, msg) {
+    const map = { loading: '.erd-loading', empty: '.erd-empty', error: '.erd-error' };
+    for (const sel of Object.values(map)) this.o.panelEl.querySelector(sel).classList.add('hidden');
+    if (!which) return;
+    const el = this.o.panelEl.querySelector(map[which]);
+    if (msg) el.textContent = msg;
+    el.classList.remove('hidden');
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}

@@ -10,6 +10,7 @@ import { Settings, CONN_COLORS } from './components/settings.js';
 import { NetworkRequests } from './components/network-requests.js';
 import { makeResizable }     from './components/resize.js';
 import { SqlAutocomplete }  from './components/autocomplete.js';
+import { ERDiagram }        from './components/erd.js';
 import { buildPivot, guessValueField } from './components/pivot.js';
 
 const BRIDGE_URL = 'http://127.0.0.1:47321';
@@ -490,6 +491,24 @@ const schema = new SchemaTree({
     currentDatabase = db;
     savedQueries.setContext(currentConnection, currentDatabase);
   },
+});
+
+// ── Schema diagram (ER) ──
+const erd = new ERDiagram({
+  panelEl: document.getElementById('erd-panel'),
+  fetchGraph: () => bridge.schemaGraph(),
+  getContext: () => ({ connection: currentConnection, database: currentDatabase }),
+  onSelectTable: (tableName) => {
+    erd.close();
+    document.getElementById('btn-erd').classList.remove('active');
+    editorTabs.openQuery(`SELECT *\nFROM ${tableName}\nLIMIT 100;`, tableName);
+    runQuery();
+  },
+});
+const btnErd = document.getElementById('btn-erd');
+btnErd.addEventListener('click', () => {
+  erd.toggle();
+  btnErd.classList.toggle('active', erd.isOpen);
 });
 
 // ── Health check ──
