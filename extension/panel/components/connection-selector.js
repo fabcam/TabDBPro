@@ -1,3 +1,5 @@
+import { colorName } from './settings.js';
+
 export class ConnectionSelector {
   constructor({ sectionEl, listEl, onSwitch, getColor }) {
     this.sectionEl = sectionEl;
@@ -53,7 +55,7 @@ export class ConnectionSelector {
       const sw = document.createElement('span');
       sw.className = 'conn-swatch' + (this.activeFilter === color ? ' active' : '');
       sw.style.background = color;
-      sw.title = `Filtrar por este color`;
+      sw.title = colorName(color);
       sw.addEventListener('click', () => {
         this.activeFilter = this.activeFilter === color ? null : color;  // toggle
         this._renderFilter();

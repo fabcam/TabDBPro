@@ -13,6 +13,20 @@ export const CONN_COLORS = [
   '#f778ba', // pink
 ];
 
+// Nombre legible de cada color (para el tooltip al hacer hover).
+export const CONN_COLOR_NAMES = {
+  '#58a6ff': 'blue',
+  '#3fb950': 'green',
+  '#bc8cff': 'purple',
+  '#e8834d': 'orange',
+  '#e3b341': 'yellow',
+  '#39d0a0': 'teal',
+  '#f85149': 'red',
+  '#f778ba': 'pink',
+};
+
+export const colorName = (hex) => CONN_COLOR_NAMES[hex] || hex;
+
 export class Settings {
   constructor({ modalEl, bodyEl, onApply, onTestSsh, onTestDb }) {
     this._modal = modalEl;
@@ -212,7 +226,7 @@ export class Settings {
         const sw = el('button', 'color-swatch' + (c === selectedColor ? ' selected' : ''));
         sw.type = 'button';
         sw.style.background = c;
-        sw.title = c;
+        sw.title = colorName(c);
         sw.addEventListener('click', () => { selectedColor = c; renderSwatches(); });
         colorWrap.appendChild(sw);
       }
@@ -398,19 +412,54 @@ export class Settings {
       const sub  = text('span', `${c.type} · ${c.host}`, 'settings-conn-sub');
       row.append(chk, dot, name, sub);
       pickSection.appendChild(row);
-      return { chk, conn: c };
+      return { chk, conn: c, row };
     });
 
-    // Select all / none toggle
+    // ── Filtro por color (mismo comportamiento que en el sidebar: toggle) ──
+    let activeFilter = null;
+    const colors = [];
+    for (const { conn } of checks) {
+      const col = conn.color ?? CONN_COLORS[0];
+      if (col && !colors.includes(col)) colors.push(col);
+    }
+    const applyFilter = () => {
+      for (const { conn, row } of checks) {
+        const col = conn.color ?? CONN_COLORS[0];
+        row.classList.toggle('hidden', !!activeFilter && col !== activeFilter);
+      }
+    };
+    let filterBar = null;
+    if (colors.length >= 2) {
+      filterBar = el('div', 'conn-filter');
+      const drawSwatches = () => {
+        filterBar.innerHTML = '';
+        for (const col of colors) {
+          const sw = el('span', 'conn-swatch' + (activeFilter === col ? ' active' : ''));
+          sw.style.background = col;
+          sw.title = colorName(col);
+          sw.addEventListener('click', () => {
+            activeFilter = activeFilter === col ? null : col;
+            drawSwatches();
+            applyFilter();
+          });
+          filterBar.appendChild(sw);
+        }
+      };
+      drawSwatches();
+    }
+
+    // Select all / none toggle (opera sobre las filas visibles con el filtro activo)
     const toggleRow = el('div', 'export-toggle-row');
     const toggleAll = btn('Select all', 'btn-sm', () => {
-      const allOn = checks.every(({ chk }) => chk.checked);
-      checks.forEach(({ chk }) => { chk.checked = !allOn; });
+      const visible = checks.filter(({ row }) => !row.classList.contains('hidden'));
+      const allOn = visible.every(({ chk }) => chk.checked);
+      visible.forEach(({ chk }) => { chk.checked = !allOn; });
       toggleAll.textContent = allOn ? 'Select all' : 'Select none';
       updateInfo();
     });
     toggleRow.appendChild(toggleAll);
     pickSection.prepend(toggleRow);
+    if (filterBar) pickSection.prepend(filterBar);
 
     // ── Passphrase ──
     const pw1El   = input('password', '', 'Passphrase');
