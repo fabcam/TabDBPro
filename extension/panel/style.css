@@ -103,6 +103,25 @@ body {
 
 .conn-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* Filtro por color */
+.conn-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 12px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.conn-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px var(--border);
+  transition: transform .1s;
+}
+.conn-swatch:hover { transform: scale(1.15); }
+.conn-swatch.active { box-shadow: 0 0 0 2px var(--bg2), 0 0 0 4px var(--text); }
+
 .sidebar-section-header {
   display: flex;
   align-items: center;
@@ -288,6 +307,8 @@ body {
   justify-content: space-between;
   gap: 8px;
 }
+
+.results-meta-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 
 .btn-pivot {
   font-size: 11px;

@@ -11,7 +11,7 @@ export async function healthRoutes(fastify) {
         connection: null,
         multipleConnections: false,
         readOnly: true,
-        version: '0.1.0',
+        version: '0.2.0',
       };
     }
 
@@ -35,7 +35,7 @@ export async function healthRoutes(fastify) {
       connection: getCurrentConnectionName(),
       multipleConnections: config.connections.length > 1,
       readOnly: getCurrentReadOnly(),
-      version: '0.1.0',
+      version: '0.2.0',
     });
   });
 }

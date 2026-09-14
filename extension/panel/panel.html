@@ -55,7 +55,6 @@
             <option value="0">No limit</option>
           </select>
         </label>
-        <button id="btn-erd" class="icon-btn" title="Schema diagram">⬡</button>
         <button id="btn-network" class="icon-btn" title="Network requests">⇅</button>
         <button id="btn-save-query" class="icon-btn" title="Save current query (Ctrl+S)">★</button>
         <button id="btn-run" class="btn-primary" title="Run query (Ctrl+Enter)">▶ Run</button>
@@ -74,7 +73,10 @@
         <div id="results-tabs" class="results-tabs hidden"></div>
         <div id="results-meta" class="results-meta hidden">
           <span id="results-meta-text"></span>
-          <button id="btn-pivot" class="btn-pivot" title="Toggle pivot table">⊞ Pivot</button>
+          <div class="results-meta-actions">
+            <button id="btn-export" class="btn-pivot" title="Export results">↓ Export</button>
+            <button id="btn-pivot" class="btn-pivot" title="Toggle pivot table">⊞ Pivot</button>
+          </div>
         </div>
         <div id="pivot-bar" class="pivot-bar hidden">
           <label class="pivot-field">Row <select id="pivot-row" class="pivot-select"></select></label>
@@ -131,7 +133,15 @@
 
   <!-- Database context menu -->
   <div id="db-context-menu" class="context-menu hidden">
+    <div class="context-item" data-action="erd">Schema diagram</div>
     <div class="context-item" data-action="dump">Download dump (.sql)</div>
+  </div>
+
+  <!-- Export results menu -->
+  <div id="export-menu" class="context-menu hidden">
+    <div class="context-item" data-action="csv">Export as CSV</div>
+    <div class="context-item" data-action="json">Export as JSON</div>
+    <div class="context-item" data-action="insert">Export as INSERT</div>
   </div>
 
   <!-- Table context menu -->

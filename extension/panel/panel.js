@@ -11,6 +11,7 @@ import { NetworkRequests } from './components/network-requests.js';
 import { makeResizable }     from './components/resize.js';
 import { SqlAutocomplete }  from './components/autocomplete.js';
 import { ERDiagram }        from './components/erd.js';
+import { EXPORT_META, guessTableName } from './components/export-results.js';
 import { buildPivot, guessValueField } from './components/pivot.js';
 
 const BRIDGE_URL = 'http://127.0.0.1:47321';
@@ -394,6 +395,34 @@ function _pivotOff() {
 }
 
 btnPivot.addEventListener('click', () => pivotActive ? _pivotOff() : _pivotOn());
+
+// ── Export de resultados (CSV / JSON / INSERT) ──
+const btnExport = document.getElementById('btn-export');
+const exportMenu = new ContextMenu(document.getElementById('export-menu'));
+btnExport.addEventListener('click', (e) => {
+  e.stopPropagation();   // evita que el listener global de document cierre el menú al instante
+  const r = btnExport.getBoundingClientRect();
+  exportMenu.show(r.left, r.bottom + 2, {});
+});
+for (const fmt of Object.keys(EXPORT_META)) exportMenu.on(fmt, () => downloadExport(fmt));
+
+function downloadExport(fmt) {
+  const tab = tabStore.find(t => t.id === activeTabId);
+  if (!tab || !tab.fields || !tab.rows) return;
+  const { ext, mime, fn } = EXPORT_META[fmt];
+  const table = guessTableName(lastSql) || 'result';
+  const content = fmt === 'insert'
+    ? fn(tab.fields, tab.rows, table, dbType)
+    : fn(tab.fields, tab.rows);
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${table}_${date}.${ext}`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 [pivotRowSel, pivotColSel, pivotValSel, pivotAggSel].forEach(s =>
   s.addEventListener('change', () => { if (pivotActive) _renderActiveTab(); })
 );
@@ -427,6 +456,21 @@ dbContextMenu.on('dump', async ({ dbName }) => {
   } finally {
     statusDot.className = prevDotClass;
     statusText.textContent = prevText;
+  }
+});
+
+dbContextMenu.on('erd', async ({ dbName }) => {
+  try {
+    // El diagrama grafica el schema de la base activa: si se pidió otra, cambiamos primero.
+    if (dbName !== schema.currentDb) {
+      await bridge.useDatabase(dbName);
+      await schema.load(bridge);
+      currentDatabase = schema.currentDb ?? dbName;
+      savedQueries.setContext(currentConnection, currentDatabase);
+    }
+    erd.open();
+  } catch (err) {
+    showErrorModal(err.message);
   }
 });
 
@@ -500,15 +544,9 @@ const erd = new ERDiagram({
   getContext: () => ({ connection: currentConnection, database: currentDatabase }),
   onSelectTable: (tableName) => {
     erd.close();
-    document.getElementById('btn-erd').classList.remove('active');
     editorTabs.openQuery(`SELECT *\nFROM ${tableName}\nLIMIT 100;`, tableName);
     runQuery();
   },
-});
-const btnErd = document.getElementById('btn-erd');
-btnErd.addEventListener('click', () => {
-  erd.toggle();
-  btnErd.classList.toggle('active', erd.isOpen);
 });
 
 // ── Health check ──

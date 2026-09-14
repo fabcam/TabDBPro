@@ -5,11 +5,15 @@ export class ConnectionSelector {
     this.onSwitch = onSwitch;
     this.getColor  = getColor ?? (() => null);
     this.currentName = null;
+    this.activeFilter = null;   // color actualmente filtrado, o null = todas
+    this.filterEl = null;
   }
 
   async load(bridge) {
     const { connections, current } = await bridge.connections();
     this.currentName = current;
+    this._connections = connections;
+    this._bridge = bridge;
 
     if (connections.length <= 1) {
       this.sectionEl.classList.add('hidden');
@@ -17,18 +21,59 @@ export class ConnectionSelector {
     }
 
     this.sectionEl.classList.remove('hidden');
-    this._render(connections, current, bridge);
+    this._renderFilter();
+    this._render();
   }
 
-  _render(connections, current, bridge) {
+  // ── Barra de filtro por color ────────────────────────────────────────────
+  _renderFilter() {
+    // colores distintos en uso (preservando orden de aparición)
+    const colors = [];
+    for (const conn of this._connections) {
+      const c = this.getColor(conn.name);
+      if (c && !colors.includes(c)) colors.push(c);
+    }
+
+    if (!this.filterEl) {
+      this.filterEl = document.createElement('div');
+      this.filterEl.className = 'conn-filter';
+      this.listEl.parentNode.insertBefore(this.filterEl, this.listEl);
+    }
+    this.filterEl.innerHTML = '';
+
+    // solo tiene sentido con ≥2 colores distintos
+    if (colors.length < 2) {
+      this.filterEl.classList.add('hidden');
+      this.activeFilter = null;
+      return;
+    }
+    this.filterEl.classList.remove('hidden');
+
+    for (const color of colors) {
+      const sw = document.createElement('span');
+      sw.className = 'conn-swatch' + (this.activeFilter === color ? ' active' : '');
+      sw.style.background = color;
+      sw.title = `Filtrar por este color`;
+      sw.addEventListener('click', () => {
+        this.activeFilter = this.activeFilter === color ? null : color;  // toggle
+        this._renderFilter();
+        this._render();
+      });
+      this.filterEl.appendChild(sw);
+    }
+  }
+
+  _render() {
     this.listEl.innerHTML = '';
-    for (const conn of connections) {
+    for (const conn of this._connections) {
+      const color = this.getColor(conn.name);
+      if (this.activeFilter && color !== this.activeFilter) continue;   // filtro activo
+
       const item = document.createElement('div');
-      item.className = 'conn-item' + (conn.name === current ? ' active' : '');
+      item.className = 'conn-item' + (conn.name === this.currentName ? ' active' : '');
 
       const dot = document.createElement('span');
       dot.className = 'conn-dot';
-      const color = this.getColor(conn.name);
       if (color) dot.style.background = color;
       else dot.classList.add(`conn-dot-${conn.type}`);
       dot.title = conn.type;
@@ -44,7 +89,7 @@ export class ConnectionSelector {
         if (conn.name === this.currentName) return;
         item.classList.add('switching');
         try {
-          await bridge.useConnection(conn.name);
+          await this._bridge.useConnection(conn.name);
           this.currentName = conn.name;
           this.listEl.querySelectorAll('.conn-item').forEach((el) => el.classList.remove('active'));
           item.classList.add('active');

@@ -32,6 +32,7 @@ export class ERDiagram {
         <div class="erd-header-controls">
           <button class="icon-btn erd-fit" title="Fit to screen">⤢ Fit</button>
           <button class="icon-btn erd-reset" title="Reset layout">↺ Reset</button>
+          <button class="icon-btn erd-export" title="Export as SVG">↓ SVG</button>
           <button class="icon-btn erd-close" title="Close">✕</button>
         </div>
       </div>
@@ -52,6 +53,7 @@ export class ERDiagram {
     p.querySelector('.erd-close').addEventListener('click', () => this.close());
     p.querySelector('.erd-fit').addEventListener('click', () => this.fit());
     p.querySelector('.erd-reset').addEventListener('click', () => this.resetLayout());
+    p.querySelector('.erd-export').addEventListener('click', () => this.exportSvg());
     this.searchEl.addEventListener('input', () => this._focusSearch(this.searchEl.value));
 
     this._wirePanZoom();
@@ -192,20 +194,27 @@ export class ERDiagram {
   }
 
   // ── Aristas FK ─────────────────────────────────────────────────────────────
+  // Geometría de una relación (bezier horizontal columna origen → destino).
+  _edgeD(r) {
+    const s = this.nodes.get(r.sourceTable);
+    const t = this.nodes.get(r.targetTable);
+    if (!s || !t) return null;
+    const sy = this._colY(s, r.sourceColumn);
+    const ty = this._colY(t, r.targetColumn);
+    const sLeft = s.x + NODE_W / 2 < t.x + NODE_W / 2;
+    const sx = sLeft ? s.x + NODE_W : s.x;
+    const tx = sLeft ? t.x : t.x + NODE_W;
+    const dx = sLeft ? 45 : -45;
+    return `M ${sx} ${sy} C ${sx + dx} ${sy}, ${tx - dx} ${ty}, ${tx} ${ty}`;
+  }
+
   _drawEdges() {
     this.svg.innerHTML = '';
     for (const r of this.rels) {
-      const s = this.nodes.get(r.sourceTable);
-      const t = this.nodes.get(r.targetTable);
-      if (!s || !t) continue;
-      const sy = this._colY(s, r.sourceColumn);
-      const ty = this._colY(t, r.targetColumn);
-      const sLeft = s.x + NODE_W / 2 < t.x + NODE_W / 2;
-      const sx = sLeft ? s.x + NODE_W : s.x;
-      const tx = sLeft ? t.x : t.x + NODE_W;
-      const dx = sLeft ? 45 : -45;
+      const d = this._edgeD(r);
+      if (!d) continue;
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      path.setAttribute('d', `M ${sx} ${sy} C ${sx + dx} ${sy}, ${tx - dx} ${ty}, ${tx} ${ty}`);
+      path.setAttribute('d', d);
       path.setAttribute('class', 'erd-edge');
       path.dataset.source = r.sourceTable;
       path.dataset.target = r.targetTable;
@@ -381,6 +390,65 @@ export class ERDiagram {
     try { chrome.storage.local.set({ [this._posKey()]: data }); } catch {}
   }
 
+  // ── Export a SVG vectorial autocontenido ────────────────────────────────────
+  exportSvg() {
+    if (!this.nodes.size) return;
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const [, n] of this.nodes) {
+      const h = HEADER_H + n.columns.length * ROW_H;
+      minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
+      maxX = Math.max(maxX, n.x + NODE_W); maxY = Math.max(maxY, n.y + h);
+    }
+    const pad = 30;
+    const x0 = minX - pad, y0 = minY - pad;
+    const w = (maxX - minX) + pad * 2, h = (maxY - minY) + pad * 2;
+
+    const edges = this.rels
+      .map((r) => { const d = this._edgeD(r); return d ? `<path d="${d}" fill="none" stroke="#94a3b8" stroke-width="1.5"/>` : ''; })
+      .join('');
+    const nodes = [...this.nodes.entries()].map(([name, n]) => this._nodeSvg(name, n)).join('');
+
+    const svg =
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(w)}" height="${Math.round(h)}" ` +
+      `viewBox="${round(x0)} ${round(y0)} ${round(w)} ${round(h)}">` +
+      `<rect x="${round(x0)}" y="${round(y0)}" width="${round(w)}" height="${round(h)}" fill="#ffffff"/>` +
+      `<g>${edges}</g><g>${nodes}</g></svg>`;
+
+    const { database } = this.o.getContext?.() || {};
+    const blob = new Blob([svg], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `erd-${database || 'schema'}.svg`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  _nodeSvg(name, n) {
+    const cols = n.columns;
+    const h = HEADER_H + cols.length * ROW_H;
+    const mono = 'font-family="Menlo,Consolas,monospace"';
+    let s = `<g transform="translate(${round(n.x)} ${round(n.y)})">`;
+    s += `<rect x="0" y="0" width="${NODE_W}" height="${h}" rx="6" fill="#ffffff" stroke="#c8c8cc"/>`;
+    s += `<path d="${roundedTopRect(NODE_W, HEADER_H, 6)}" fill="#334155"/>`;
+    s += `<text x="10" y="${HEADER_H / 2}" dominant-baseline="middle" fill="#ffffff" font-size="12" ` +
+         `font-weight="600" font-family="-apple-system,Segoe UI,sans-serif">${escapeHtml(trunc(name, 26))}</text>`;
+    cols.forEach((c, i) => {
+      const y = HEADER_H + i * ROW_H;
+      if (i > 0) s += `<line x1="0" y1="${y}" x2="${NODE_W}" y2="${y}" stroke="#ececf0"/>`;
+      const cy = y + ROW_H / 2;
+      const badge = c.pk ? 'PK' : (c.fk ? 'FK' : '');
+      if (badge) s += `<text x="8" y="${cy}" dominant-baseline="middle" font-size="8" font-weight="700" ` +
+                      `fill="${c.pk ? '#b7791f' : '#2563eb'}" ${mono}>${badge}</text>`;
+      s += `<text x="30" y="${cy}" dominant-baseline="middle" font-size="11" fill="#1e1e1e" ${mono}` +
+           `${c.pk ? ' font-weight="700"' : ''}>${escapeHtml(trunc(c.name, 18))}</text>`;
+      s += `<text x="${NODE_W - 8}" y="${cy}" text-anchor="end" dominant-baseline="middle" font-size="9" ` +
+           `fill="#6b7280" ${mono}>${escapeHtml(trunc(c.type, 12))}</text>`;
+    });
+    return s + '</g>';
+  }
+
   _showState(which, msg) {
     const map = { loading: '.erd-loading', empty: '.erd-empty', error: '.erd-error' };
     for (const sel of Object.values(map)) this.o.panelEl.querySelector(sel).classList.add('hidden');
@@ -393,4 +461,16 @@ export class ERDiagram {
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+function trunc(s, n) {
+  s = String(s);
+  return s.length > n ? s.slice(0, n - 1) + '…' : s;
+}
+
+function round(n) { return Math.round(n); }
+
+// Path de un rectángulo con esquinas superiores redondeadas y base recta.
+function roundedTopRect(w, h, r) {
+  return `M 0 ${h} L 0 ${r} Q 0 0 ${r} 0 L ${w - r} 0 Q ${w} 0 ${w} ${r} L ${w} ${h} Z`;
 }
