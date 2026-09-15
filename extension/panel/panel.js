@@ -309,8 +309,8 @@ function _renderActiveTab() {
   const tab = tabStore.find(t => t.id === activeTabId);
   if (!tab) { showState('empty'); resultsMeta.classList.add('hidden'); return; }
 
-  // Pivot mode — non-editable tabs only
-  if (pivotActive && !tab.editable) {
+  // Pivot mode (vista de solo lectura; funciona también sobre resultados editables)
+  if (pivotActive) {
     const result = buildPivot(tab.fields, tab.rows, {
       rowCol:   pivotRowSel.value,
       colCol:   pivotColSel.value,
@@ -332,7 +332,7 @@ function _renderActiveTab() {
     resultsTable.render(tab.fields, tab.rows, { fkMap: tab.fkMap, onFkClick: handleFkClick });
   }
   resultsMetaText.textContent = tab.metaText;
-  btnPivot.disabled = !!tab.editable;
+  btnPivot.disabled = false;
   resultsMeta.classList.remove('hidden');
   showState('table');
 }
@@ -418,7 +418,7 @@ let pivotActive = false;
 
 function _pivotOn() {
   const tab = tabStore.find(t => t.id === activeTabId);
-  if (!tab || tab.editable) return;
+  if (!tab) return;
   // Populate selects with current tab's field names
   const opts = tab.fields.map(f => `<option value="${f.name}">${f.name}</option>`).join('');
   pivotRowSel.innerHTML = opts;
