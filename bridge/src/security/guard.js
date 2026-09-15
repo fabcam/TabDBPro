@@ -2,10 +2,11 @@
 // Intentionally simple: reject on first suspicious keyword.
 const WRITE_KEYWORDS = /^\s*(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|GRANT|REVOKE|REPLACE|MERGE|CALL|EXEC|EXECUTE)\b/i;
 
-// Additional dangerous patterns even in SELECT context
+// Patrones peligrosos aún en contexto SELECT. Nota: NO bloqueamos comentarios SQL
+// (-- o /* */) — son legítimos y no pueden modificar datos; el read-only ya está
+// cubierto por el keyword inicial y el read-only a nivel de base.
 const DANGEROUS_PATTERNS = [
   /;\s*(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|GRANT|REVOKE)/i, // stacked queries
-  /--\s*$/m,   // trailing comment that might hide injected code (allow inline -- for SQL comments in general queries)
 ];
 
 export function checkReadOnly(sql) {

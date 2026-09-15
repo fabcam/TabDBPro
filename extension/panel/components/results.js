@@ -10,12 +10,13 @@ export class ResultsTable {
     this._sortState = { col: -1, dir: 0 };
   }
 
-  render(fields, rows, { fkMap = new Map(), onFkClick = null } = {}) {
+  render(fields, rows, { fkMap = new Map(), onFkClick = null, blankRepeatCols = 0 } = {}) {
     this._fields = fields;
     this._rows = rows;
     this._fkMap = fkMap;
     this._callbacks = onFkClick ? { onFkClick } : null;
     this._editable = false;
+    this._blankRepeatCols = blankRepeatCols;   // columnas-fila de pivot cuyas repeticiones se ocultan
     this._sortState = { col: -1, dir: 0 };
     this._buildHead(fields, false);
     this._buildBody(fields, rows, false);
@@ -28,6 +29,7 @@ export class ResultsTable {
     this._enumMap = callbacks.enumMap ?? new Map();
     this._callbacks = callbacks;
     this._editable = true;
+    this._blankRepeatCols = 0;
     this._sortState = { col: -1, dir: 0 };
     this._buildHead(fields, true);
     this._buildBody(fields, rows, true);
@@ -94,12 +96,25 @@ export class ResultsTable {
   _buildBody(fields, rows, editable) {
     this.body.innerHTML = '';
     const frag = document.createDocumentFragment();
-    for (const row of rows) {
+    // Pivot: ocultar etiquetas de grupo repetidas en las primeras N columnas, según el
+    // orden actual (recalculado en cada render/sort para no romper al ordenar).
+    const bn = (!editable && this._blankRepeatCols) ? this._blankRepeatCols : 0;
+    for (let ri = 0; ri < rows.length; ri++) {
+      const row = rows[ri];
+      const prev = ri > 0 ? rows[ri - 1] : null;
       const snapshot = [...row];
       const tr = document.createElement('tr');
       for (let i = 0; i < row.length; i++) {
         const td = document.createElement('td');
-        this._setCellContent(td, fields[i].name, row[i]);
+        let val = row[i];
+        if (bn && i < bn && prev) {
+          let samePrefix = true;
+          for (let k = 0; k <= i; k++) {
+            if (String(row[k] ?? '') !== String(prev[k] ?? '')) { samePrefix = false; break; }
+          }
+          if (samePrefix) val = '';
+        }
+        this._setCellContent(td, fields[i].name, val);
         if (editable) {
           td.classList.add('td-editable');
           td.addEventListener('click', () => this._startEdit(td, fields[i].name, snapshot));

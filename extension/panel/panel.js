@@ -55,6 +55,8 @@ const resultsMetaText = document.getElementById('results-meta-text');
 const btnPivot        = document.getElementById('btn-pivot');
 const pivotBar        = document.getElementById('pivot-bar');
 const pivotRowSel     = document.getElementById('pivot-row');
+const pivotRow2Sel    = document.getElementById('pivot-row2');
+const pivotRow3Sel    = document.getElementById('pivot-row3');
 const pivotColSel     = document.getElementById('pivot-col');
 const pivotValSel     = document.getElementById('pivot-val');
 const pivotAggSel     = document.getElementById('pivot-agg');
@@ -312,13 +314,13 @@ function _renderActiveTab() {
   // Pivot mode (vista de solo lectura; funciona también sobre resultados editables)
   if (pivotActive) {
     const result = buildPivot(tab.fields, tab.rows, {
-      rowCol:   pivotRowSel.value,
+      rowCol:   [...new Set([pivotRowSel.value, pivotRow2Sel.value, pivotRow3Sel.value].filter(Boolean))],
       colCol:   pivotColSel.value,
       valueCol: pivotValSel.value,
       agg:      pivotAggSel.value,
     });
     if (result) {
-      resultsTable.render(result.pivotFields, result.pivotRows);
+      resultsTable.render(result.pivotFields, result.pivotRows, { blankRepeatCols: result.rowColCount });
       resultsMetaText.textContent = `${tab.metaText} · pivot ${result.stats}`;
       resultsMeta.classList.remove('hidden');
       showState('table');
@@ -422,9 +424,13 @@ function _pivotOn() {
   // Populate selects with current tab's field names
   const opts = tab.fields.map(f => `<option value="${f.name}">${f.name}</option>`).join('');
   pivotRowSel.innerHTML = opts;
+  pivotRow2Sel.innerHTML = '<option value="">(none)</option>' + opts;   // Row 2/3 opcionales
+  pivotRow3Sel.innerHTML = '<option value="">(none)</option>' + opts;
   pivotColSel.innerHTML = opts;
   pivotValSel.innerHTML = opts;
   if (tab.fields.length > 0) pivotRowSel.value = tab.fields[0].name;
+  pivotRow2Sel.value = '';
+  pivotRow3Sel.value = '';
   if (tab.fields.length > 1) pivotColSel.value = tab.fields[1].name;
   const valGuess = guessValueField(tab.fields) ?? (tab.fields[2] ?? tab.fields[0])?.name;
   if (valGuess) pivotValSel.value = valGuess;
@@ -470,7 +476,7 @@ function downloadExport(fmt) {
   a.click();
   URL.revokeObjectURL(url);
 }
-[pivotRowSel, pivotColSel, pivotValSel, pivotAggSel].forEach(s =>
+[pivotRowSel, pivotRow2Sel, pivotRow3Sel, pivotColSel, pivotValSel, pivotAggSel].forEach(s =>
   s.addEventListener('change', () => { if (pivotActive) _renderActiveTab(); })
 );
 
@@ -739,6 +745,7 @@ async function handleUpdate(tableName, fields, fieldName, parsed, snapshot, pkCo
     }).join(' AND ');
   }
   const sql = `UPDATE ${quoteId(tableName)} SET ${setClause} WHERE ${where}`;
+  await ensureBridgeContext();
   if (currentConfirmWrites() && !(await confirmWrite(sql, params))) throw new Error(WRITE_CANCELLED);
   await bridge.query(sql, params);
 }
@@ -769,6 +776,7 @@ async function handleInsert(tableName, fields, values, reloadFn = reloadResults)
   }).join(', ');
 
   const sql = `INSERT INTO ${quoteId(tableName)} (${cols}) VALUES (${placeholders})`;
+  await ensureBridgeContext();
   if (currentConfirmWrites() && !(await confirmWrite(sql, params))) throw new Error(WRITE_CANCELLED);
   await bridge.query(sql, params);
   await reloadFn();
@@ -830,6 +838,22 @@ function currentConfirmWrites() {
 const WRITE_RE = /^\s*(?:--[^\n]*\n|\/\*[\s\S]*?\*\/|\s)*(insert|update|delete|drop|alter|truncate|create|replace|merge|grant|revoke)\b/i;
 const isWriteSql = (sql) => WRITE_RE.test(sql);
 
+// El bridge tiene una sola conexión/DB activa (estado compartido). Antes de ejecutar,
+// nos aseguramos de que esté en la conexión + base que muestra la UI (se re-sincroniza
+// solo si difiere), para no correr contra otra conexión por una reconexión previa.
+async function ensureBridgeContext() {
+  if (!currentConnection) return;
+  try {
+    const h = await bridge.health();
+    if (h.connection !== currentConnection) {
+      await bridge.useConnection(currentConnection);
+      if (currentDatabase) await bridge.useDatabase(currentDatabase);
+    } else if (currentDatabase && h.database && h.database !== currentDatabase) {
+      await bridge.useDatabase(currentDatabase);
+    }
+  } catch { /* si health/switch falla, la query reportará el error real */ }
+}
+
 // ── Run query ──
 async function runQuery() {
   editorTabs.syncFromEditor();
@@ -837,6 +861,7 @@ async function runQuery() {
   if (!sql) return;
 
   if (currentConfirmWrites() && isWriteSql(sql) && !(await confirmWrite(sql))) return;
+  await ensureBridgeContext();
 
   lastSql = sql;
   showState('loading');
@@ -916,6 +941,7 @@ async function runAllQueries() {
   const statements = splitStatements(source);
   if (statements.length <= 1) return runQuery();   // una sola → flujo normal
 
+  await ensureBridgeContext();
   showState('loading');
   btnRunAll.disabled = btnRun.disabled = true;
   const results = [];

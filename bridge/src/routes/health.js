@@ -1,4 +1,4 @@
-import { getPool, getCurrentConnType, getCurrentConnectionName, getCurrentReadOnly } from '../db/pool.js';
+import { getPool, getCurrentConnType, getCurrentConnectionName, getCurrentReadOnly, getCurrentDatabase } from '../db/pool.js';
 import { config } from '../config.js';
 
 export async function healthRoutes(fastify) {
@@ -9,6 +9,7 @@ export async function healthRoutes(fastify) {
         status: 'unconfigured',
         db: { type: null, status: 'unconfigured' },
         connection: null,
+        database: null,
         multipleConnections: false,
         readOnly: true,
         version: '0.3.0',
@@ -33,6 +34,7 @@ export async function healthRoutes(fastify) {
       status: healthy ? 'ok' : 'error',
       db: { type, status: dbStatus, error: dbError },
       connection: getCurrentConnectionName(),
+      database: getCurrentDatabase(),
       multipleConnections: config.connections.length > 1,
       readOnly: getCurrentReadOnly(),
       version: '0.3.0',

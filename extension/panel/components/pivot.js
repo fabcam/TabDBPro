@@ -22,44 +22,62 @@ function sorter(a, b) {
   return String(a).localeCompare(String(b));
 }
 
+// Ordena tuplas (arrays) elemento a elemento.
+function tupleSorter(a, b) {
+  for (let i = 0; i < a.length; i++) {
+    const c = sorter(a[i], b[i]);
+    if (c !== 0) return c;
+  }
+  return 0;
+}
+
+// rowCol acepta un string o un array de nombres (agrupación por varios campos).
 export function buildPivot(fields, rows, { rowCol, colCol, valueCol, agg = 'sum' }) {
-  const ri = fields.findIndex(f => f.name === rowCol);
+  const rowCols = (Array.isArray(rowCol) ? rowCol : [rowCol]).filter(Boolean);
+  const rowIdx = rowCols.map(name => fields.findIndex(f => f.name === name));
   const ci = fields.findIndex(f => f.name === colCol);
   const vi = fields.findIndex(f => f.name === valueCol);
-  if (ri < 0 || ci < 0 || vi < 0) return null;
-  if (ri === ci) return null;
+  if (rowIdx.length === 0 || rowIdx.some(i => i < 0) || ci < 0 || vi < 0) return null;
+  if (rowIdx.includes(ci)) return null;   // un mismo campo no puede ser row y column
 
   const colVals = [...new Set(rows.map(r => r[ci]))].sort(sorter);
-  const rowVals = [...new Set(rows.map(r => r[ri]))].sort(sorter);
 
-  const cellMap = new Map();
+  // Agrupar por la tupla de valores de las columnas-fila.
+  const tupleOf = (row) => rowIdx.map(i => row[i]);
+  const keyOf = (tuple) => JSON.stringify(tuple);
+  const tuples = new Map();   // key → tuple (para preservar los valores)
+  const cellMap = new Map();  // key → Map(colVal → values[])
   for (const row of rows) {
-    const rv = row[ri], cv = row[ci], vv = row[vi];
-    if (!cellMap.has(rv)) cellMap.set(rv, new Map());
-    const inner = cellMap.get(rv);
+    const tuple = tupleOf(row);
+    const key = keyOf(tuple);
+    if (!tuples.has(key)) { tuples.set(key, tuple); cellMap.set(key, new Map()); }
+    const inner = cellMap.get(key);
+    const cv = row[ci];
     if (!inner.has(cv)) inner.set(cv, []);
-    inner.get(cv).push(vv);
+    inner.get(cv).push(row[vi]);
   }
 
+  const orderedTuples = [...tuples.values()].sort(tupleSorter);
   const fn = AGGS[agg] ?? AGGS.sum;
 
   const pivotFields = [
-    { name: rowCol, dataTypeID: 0 },
+    ...rowCols.map(name => ({ name, dataTypeID: 0 })),
     ...colVals.map(cv => ({ name: cv === null ? '(NULL)' : String(cv), dataTypeID: 0 })),
   ];
 
-  const pivotRows = rowVals.map(rv => [
-    rv,
-    ...colVals.map(cv => {
-      const vals = cellMap.get(rv)?.get(cv);
-      return vals ? fn(vals) : null;
-    }),
-  ]);
+  const pivotRows = orderedTuples.map(tuple => {
+    const inner = cellMap.get(keyOf(tuple));
+    return [
+      ...tuple,
+      ...colVals.map(cv => { const vals = inner.get(cv); return vals ? fn(vals) : null; }),
+    ];
+  });
 
   return {
     pivotFields,
     pivotRows,
-    stats: `${rowVals.length} × ${colVals.length}`,
+    rowColCount: rowCols.length,   // cuántas columnas iniciales son de agrupación
+    stats: `${orderedTuples.length} × ${colVals.length}`,
   };
 }
 
