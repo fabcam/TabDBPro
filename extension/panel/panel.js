@@ -1058,6 +1058,14 @@ document.addEventListener('keydown', (e) => {
   insert(sidebarHandle, document.getElementById('app'), document.getElementById('main'));
   makeResizable(sidebarHandle, document.getElementById('sidebar'), 'x', { min: 140 });
 
+  // Connection list ↕ (vertical, inside sidebar; el handle se oculta con la sección)
+  const connList = document.getElementById('connection-list');
+  if (connList) {
+    const connHandle = handle('resize-handle resize-h-y');
+    connList.parentNode.insertBefore(connHandle, connList.nextSibling);
+    makeResizable(connHandle, connList, 'y', { min: 40 });
+  }
+
   // Database list ↕ tables (vertical, inside sidebar)
   const dbHandle = handle('resize-handle resize-h-y');
   const dbList = document.getElementById('db-list');

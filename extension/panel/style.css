@@ -116,6 +116,9 @@ body {
 .connection-list {
   padding: 4px 0;
   border-bottom: 1px solid var(--border);
+  height: 120px;
+  min-height: 40px;
+  overflow-y: auto;
 }
 
 .conn-item {
