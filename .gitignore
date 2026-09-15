@@ -7,6 +7,6 @@ bridge/data/known_hosts.json
 data/known_hosts.json
 .claude/
 
-# Build output y paquetes distribuibles
+# Build output y paquetes distribuibles (solo la carpeta release/ de la raíz)
 bridge/dist/
-release/
+/release/

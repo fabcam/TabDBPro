@@ -1,22 +1,20 @@
 #!/usr/bin/env bash
 #
-# install-service.sh — instala el bridge de TabDB Pro como LaunchAgent de macOS.
+# install.sh — instala TabDB Pro (bridge) como servicio de macOS.
 #
-# Deja el bridge corriendo en segundo plano, arrancando solo en cada inicio de
-# sesión (RunAtLoad) y reviviéndose si crashea (KeepAlive). Escucha en
-# 127.0.0.1:47321 y arranca SIN conexiones: la extensión de Chrome las inyecta
-# desde chrome.storage al conectarse.
+# Este instalador es autocontenido: se corre desde la carpeta descomprimida del
+# paquete, sin necesitar el proyecto, Node ni npm. Deja el bridge corriendo en
+# segundo plano, arrancando solo en cada login y reviviéndose si crashea.
 #
-# Idempotente: se puede volver a correr tras cada `npm run build` para actualizar
-# el binario instalado y recargar el servicio.
+# Uso:  ./install.sh
 
 set -euo pipefail
 
 LABEL="com.tabdbpro.bridge"
-PORT="${BRIDGE_PORT:-47321}"
+PORT="47321"   # fijo: la extensión de Chrome apunta a 127.0.0.1:47321
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DIST_DIR="$REPO_DIR/bridge/dist"
+PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BIN_DIR="$PKG_DIR/bin"
 
 INSTALL_DIR="$HOME/Library/Application Support/TabDBPro"
 DATA_DIR="$INSTALL_DIR/data"
@@ -26,33 +24,34 @@ PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG_OUT="$HOME/Library/Logs/tabdb-bridge.out.log"
 LOG_ERR="$HOME/Library/Logs/tabdb-bridge.err.log"
 
+echo "── Instalando TabDB Pro ─────────────────────────────────"
+
 # ── 1. Elegir el binario según arquitectura ─────────────────────────────────────
-# Usamos sysctl en vez de `uname -m`: si este script corre bajo un bash traducido
-# por Rosetta, `uname -m` miente y dice x86_64 en una Mac Apple Silicon.
+# sysctl no se deja engañar por Rosetta (uname -m sí).
 if [[ "$(sysctl -n hw.optional.arm64 2>/dev/null)" == "1" ]]; then
   TRIPLE="aarch64-apple-darwin"
+  echo "→ Mac Apple Silicon detectada"
 else
   TRIPLE="x86_64-apple-darwin"
+  echo "→ Mac Intel detectada"
 fi
 
-BIN_SRC="$DIST_DIR/tabdb-bridge-$TRIPLE"
+BIN_SRC="$BIN_DIR/tabdb-bridge-$TRIPLE"
 if [[ ! -s "$BIN_SRC" ]]; then
-  echo "No encuentro el binario: $BIN_SRC" >&2
-  echo "Corré primero:  cd bridge && npm run build" >&2
+  echo "✗ No encuentro el binario para tu Mac: $BIN_SRC" >&2
   exit 1
 fi
 
-echo "→ Binario:      $BIN_SRC"
-echo "→ Instalando en: $INSTALL_DIR"
-
-# ── 2. Instalar el binario + carpeta data/ ──────────────────────────────────────
+# ── 2. Instalar binario + carpeta data/, quitar cuarentena de Gatekeeper ─────────
 mkdir -p "$INSTALL_DIR" "$DATA_DIR" "$HOME/Library/LaunchAgents"
 cp "$BIN_SRC" "$BIN_DEST"
 chmod +x "$BIN_DEST"
+# El binario viaja sin firmar: sin esto, macOS lo bloquea por venir de otra Mac.
+xattr -dr com.apple.quarantine "$BIN_DEST" 2>/dev/null || true
+echo "→ Binario instalado en: $INSTALL_DIR"
 
-# ── 3. Descargar la versión previa del servicio (si estaba cargada) ─────────────
+# ── 3. Descargar versión previa (si estaba cargada) ─────────────────────────────
 if launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1; then
-  echo "→ Descargando servicio previo…"
   launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
   # bootout es asíncrono: esperar a que el servicio realmente se descargue antes de bootstrap
   for _ in $(seq 1 25); do
@@ -94,29 +93,30 @@ cat > "$PLIST" <<PLIST_EOF
 </plist>
 PLIST_EOF
 
-echo "→ Plist:        $PLIST"
-
 # ── 5. Cargar el servicio ───────────────────────────────────────────────────────
 launchctl bootstrap "gui/$(id -u)" "$PLIST"
 launchctl enable "gui/$(id -u)/$LABEL" 2>/dev/null || true
 
 # ── 6. Verificar ────────────────────────────────────────────────────────────────
-echo "→ Esperando a que el bridge responda…"
 for i in $(seq 1 15); do
   if curl -fs -m 2 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
     echo ""
     echo "✅ Bridge corriendo como servicio en http://127.0.0.1:$PORT"
-    echo "   /health → $(curl -s -m 2 "http://127.0.0.1:$PORT/health")"
-    echo ""
     echo "   Arranca solo en cada login y se reinicia si crashea."
-    echo "   Logs:   $LOG_OUT"
-    echo "           $LOG_ERR"
-    echo "   Parar:  scripts/uninstall-service.sh"
+    echo ""
+    echo "   SIGUIENTE PASO — cargar la extensión en Chrome:"
+    echo "   1. Abrí  chrome://extensions"
+    echo "   2. Activá 'Developer mode' (arriba a la derecha)"
+    echo "   3. 'Load unpacked' → elegí la carpeta:"
+    echo "        $PKG_DIR/extension"
+    echo "   4. Abrí DevTools (Cmd+Opt+I) → pestaña 'TabDB Pro' → ⚙ → agregá tu conexión"
+    echo ""
+    echo "   Ver INSTALL.md para el detalle."
     exit 0
   fi
   sleep 1
 done
 
 echo "⚠️  El servicio se cargó pero /health no respondió a tiempo." >&2
-echo "    Revisá los logs: $LOG_ERR" >&2
+echo "    Revisá el log: $LOG_ERR" >&2
 exit 1
