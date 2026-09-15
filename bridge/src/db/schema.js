@@ -115,6 +115,17 @@ export async function getTableIndexes(tableName) {
   }
 }
 
+// Parsea las opciones de un enum/set de MySQL: enum('a','b','c') → ['a','b','c'].
+function parseMysqlEnum(columnType) {
+  const m = /^(?:enum|set)\((.*)\)$/i.exec(columnType || '');
+  if (!m) return null;
+  const out = [];
+  const re = /'((?:[^']|'')*)'/g;
+  let x;
+  while ((x = re.exec(m[1]))) out.push(x[1].replace(/''/g, "'"));
+  return out.length ? out : null;
+}
+
 export async function getTableSchema(tableName) {
   const pool = await getPool();
   const type = getCurrentConnType();
@@ -122,23 +133,54 @@ export async function getTableSchema(tableName) {
 
   if (type === 'postgres') {
     const { rows } = await pool.query(
-      `SELECT column_name, data_type, is_nullable, column_default
+      `SELECT column_name, data_type, is_nullable, column_default, udt_name
        FROM information_schema.columns
        WHERE table_schema = 'public' AND table_name = $1
        ORDER BY ordinal_position`,
       [tableName]
     );
-    return rows;
+
+    // Etiquetas de los tipos enum usados por columnas USER-DEFINED.
+    const enumTypes = [...new Set(rows.filter((r) => r.data_type === 'USER-DEFINED').map((r) => r.udt_name))];
+    const enumByType = {};
+    if (enumTypes.length) {
+      const { rows: er } = await pool.query(
+        `SELECT t.typname, e.enumlabel
+         FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid
+         WHERE t.typname = ANY($1)
+         ORDER BY e.enumsortorder`,
+        [enumTypes]
+      );
+      for (const r of er) (enumByType[r.typname] ||= []).push(r.enumlabel);
+    }
+
+    return rows.map((r) => {
+      const isEnum = r.data_type === 'USER-DEFINED' && enumByType[r.udt_name];
+      return {
+        column_name: r.column_name,
+        data_type: r.data_type === 'USER-DEFINED' ? r.udt_name : r.data_type,
+        is_nullable: r.is_nullable,
+        column_default: r.column_default,
+        enumValues: isEnum ? enumByType[r.udt_name] : null,
+      };
+    });
   } else {
     const [rows] = await pool.execute(
       `SELECT COLUMN_NAME AS column_name, DATA_TYPE AS data_type,
-              IS_NULLABLE AS is_nullable, COLUMN_DEFAULT AS column_default
+              IS_NULLABLE AS is_nullable, COLUMN_DEFAULT AS column_default,
+              COLUMN_TYPE AS column_type
        FROM information_schema.COLUMNS
        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
        ORDER BY ORDINAL_POSITION`,
       [tableName]
     );
-    return rows;
+    return rows.map((r) => ({
+      column_name: r.column_name,
+      data_type: r.data_type,
+      is_nullable: r.is_nullable,
+      column_default: r.column_default,
+      enumValues: (r.data_type === 'enum' || r.data_type === 'set') ? parseMysqlEnum(r.column_type) : null,
+    }));
   }
 }
 

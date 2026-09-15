@@ -17,7 +17,8 @@ export class ERDiagram {
     this.nodes = new Map();       // name -> { x, y, columns, el }
     this.rels = [];
     this.transform = { s: 1, tx: 0, ty: 0 };
-    this.isOpen = false;
+    this.hasContent = false;      // true una vez renderizado (permite show() sin recargar)
+    this.selected = null;         // tabla seleccionada (click) → resalta y filtra el export
     this._build();
   }
 
@@ -32,7 +33,7 @@ export class ERDiagram {
         <div class="erd-header-controls">
           <button class="icon-btn erd-fit" title="Fit to screen">⤢ Fit</button>
           <button class="icon-btn erd-reset" title="Reset layout">↺ Reset</button>
-          <button class="icon-btn erd-export" title="Export as SVG">↓ SVG</button>
+          <button class="icon-btn erd-export" title="Export SVG (selected table + related, or all if none selected)">↓ SVG</button>
           <button class="icon-btn erd-close" title="Close">✕</button>
         </div>
       </div>
@@ -59,19 +60,32 @@ export class ERDiagram {
     this._wirePanZoom();
   }
 
-  // ── Abrir / cerrar ─────────────────────────────────────────────────────────
-  async toggle() { this.isOpen ? this.close() : this.open(); }
+  // ── Abrir / mostrar / ocultar ───────────────────────────────────────────────
+  get visible() { return !this.o.panelEl.classList.contains('hidden'); }
 
+  async toggle() { this.visible ? this.hide() : this.show(); }
+
+  // Abrir desde cero: (re)carga el grafo desde el bridge y muestra.
   async open() {
     this.o.panelEl.classList.remove('hidden');
-    this.isOpen = true;
-    await this.load();
+    await this.load();                    // _render setea this.hasContent
+    this.o.onVisibilityChange?.();
   }
 
-  close() {
-    this.o.panelEl.classList.add('hidden');
-    this.isOpen = false;
+  // Volver a mostrar sin recargar (mantiene layout/selección). Si no hay contenido, carga.
+  show() {
+    if (!this.hasContent) return this.open();
+    this.o.panelEl.classList.remove('hidden');
+    this.o.onVisibilityChange?.();
   }
+
+  // Ocultar manteniendo el estado renderizado.
+  hide() {
+    this.o.panelEl.classList.add('hidden');
+    this.o.onVisibilityChange?.();
+  }
+
+  close() { this.hide(); }               // ✕ del panel = ocultar (se puede reabrir)
 
   async load() {
     this._showState('loading');
@@ -95,6 +109,7 @@ export class ERDiagram {
     this.svg.innerHTML = '';
     this.nodes.clear();
     this.rels = graph.relationships || [];
+    this.selected = null;
 
     const positions = this._autoLayout(graph);
     const saved = this._loadPositions();
@@ -111,6 +126,7 @@ export class ERDiagram {
 
     this._drawEdges();
     this.fit();
+    this.hasContent = true;
   }
 
   _nodeEl(t) {
@@ -122,7 +138,7 @@ export class ERDiagram {
     const header = document.createElement('div');
     header.className = 'erd-node-header';
     header.textContent = t.name;
-    header.title = `${t.name} — click para SELECT *`;
+    header.title = `${t.name} — click: SELECT * en una pestaña nueva (el diagrama queda abierto)`;
     header.addEventListener('click', (e) => {
       if (this._dragged) return;      // ignorar el click que cierra un drag
       e.stopPropagation();
@@ -141,7 +157,45 @@ export class ERDiagram {
         `<span class="erd-col-type">${escapeHtml(c.type)}</span>`;
       el.appendChild(row);
     }
+
+    // Click en el cuerpo (no el header) selecciona/deselecciona la tabla.
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.erd-node-header')) return;   // el header hace SELECT
+      if (this._dragged) return;
+      this._toggleSelect(t.name);
+    });
     return el;
+  }
+
+  _relatedSet(name) {
+    const s = new Set();
+    for (const r of this.rels) {
+      if (r.sourceTable === name) s.add(r.targetTable);
+      if (r.targetTable === name) s.add(r.sourceTable);
+    }
+    return s;
+  }
+
+  _toggleSelect(name) {
+    this.selected = this.selected === name ? null : name;
+    this._applySelection();
+  }
+
+  // Resaltado persistente según la selección (o limpio si no hay).
+  _applySelection() {
+    const name = this.selected;
+    const related = name ? this._relatedSet(name) : null;
+    this.svg.querySelectorAll('.erd-edge').forEach((p) => {
+      const hit = name && (p.dataset.source === name || p.dataset.target === name);
+      p.classList.toggle('active', !!hit);
+      p.classList.toggle('dim', !!name && !hit);
+    });
+    this.world.querySelectorAll('.erd-node').forEach((n) => {
+      const t = n.dataset.table;
+      const inSel = !!name && (t === name || related.has(t));
+      n.classList.toggle('dim', !!name && !inSel);
+      n.classList.toggle('selected', name === t);
+    });
   }
 
   // ── Layout automático por capas según FKs ──────────────────────────────────
@@ -263,11 +317,8 @@ export class ERDiagram {
   }
 
   _highlight(name, on) {
-    const related = new Set();
-    for (const r of this.rels) {
-      if (r.sourceTable === name) related.add(r.targetTable);
-      if (r.targetTable === name) related.add(r.sourceTable);
-    }
+    if (this.selected) return;   // hay selección fija: el hover no interfiere
+    const related = this._relatedSet(name);
     this.svg.querySelectorAll('.erd-edge').forEach((p) => {
       const hit = p.dataset.source === name || p.dataset.target === name;
       p.classList.toggle('active', on && hit);
@@ -286,7 +337,9 @@ export class ERDiagram {
       if (e.target.closest('.erd-node')) return;   // el nodo maneja su propio drag
       const startX = e.clientX, startY = e.clientY;
       const { tx, ty } = this.transform;
+      let panned = false;
       const move = (ev) => {
+        if (Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) > 3) panned = true;
         this.transform.tx = tx + (ev.clientX - startX);
         this.transform.ty = ty + (ev.clientY - startY);
         this._applyTransform();
@@ -294,6 +347,7 @@ export class ERDiagram {
       const up = () => {
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);
+        if (!panned && this.selected) { this.selected = null; this._applySelection(); }  // click en vacío deselecciona
       };
       window.addEventListener('pointermove', move);
       window.addEventListener('pointerup', up);
@@ -394,8 +448,13 @@ export class ERDiagram {
   exportSvg() {
     if (!this.nodes.size) return;
 
+    // Si hay una tabla seleccionada, exporta solo ella + sus relacionadas; si no, todas.
+    const keep = this.selected ? new Set([this.selected, ...this._relatedSet(this.selected)]) : null;
+    const nodeEntries = [...this.nodes.entries()].filter(([name]) => !keep || keep.has(name));
+    if (nodeEntries.length === 0) return;
+
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const [, n] of this.nodes) {
+    for (const [, n] of nodeEntries) {
       const h = HEADER_H + n.columns.length * ROW_H;
       minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
       maxX = Math.max(maxX, n.x + NODE_W); maxY = Math.max(maxY, n.y + h);
@@ -405,9 +464,10 @@ export class ERDiagram {
     const w = (maxX - minX) + pad * 2, h = (maxY - minY) + pad * 2;
 
     const edges = this.rels
+      .filter((r) => !keep || (keep.has(r.sourceTable) && keep.has(r.targetTable)))
       .map((r) => { const d = this._edgeD(r); return d ? `<path d="${d}" fill="none" stroke="#94a3b8" stroke-width="1.5"/>` : ''; })
       .join('');
-    const nodes = [...this.nodes.entries()].map(([name, n]) => this._nodeSvg(name, n)).join('');
+    const nodes = nodeEntries.map(([name, n]) => this._nodeSvg(name, n)).join('');
 
     const svg =
       `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(w)}" height="${Math.round(h)}" ` +
@@ -416,11 +476,12 @@ export class ERDiagram {
       `<g>${edges}</g><g>${nodes}</g></svg>`;
 
     const { database } = this.o.getContext?.() || {};
+    const suffix = this.selected ? `-${this.selected}` : '';
     const blob = new Blob([svg], { type: 'image/svg+xml' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `erd-${database || 'schema'}.svg`;
+    a.download = `erd-${database || 'schema'}${suffix}.svg`;
     a.click();
     URL.revokeObjectURL(url);
   }

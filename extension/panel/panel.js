@@ -218,6 +218,13 @@ async function getTableMeta(tableName) {
     const pk = indexes.find(i => i.type === 'PRIMARY KEY');
     const pkCols = pk ? pk.columns.split(',').map(s => s.trim()) : [];
 
+    // Mapa de columnas enum → opciones (para mostrar <select> al editar/insertar).
+    const enumMap = new Map();
+    try {
+      const { columns } = await bridge.tableSchema(tableName);
+      for (const c of columns) if (c.enumValues?.length) enumMap.set(c.column_name, c.enumValues);
+    } catch { /* sin schema → sin enums */ }
+
     const fkMap = new Map();
     for (const idx of indexes) {
       if (idx.type !== 'FOREIGN KEY') continue;
@@ -232,10 +239,10 @@ async function getTableMeta(tableName) {
       });
     }
 
-    const meta = { pkCols, fkMap };
+    const meta = { pkCols, fkMap, enumMap };
     tableMetaCache.set(tableName, meta);
     return meta;
-  } catch { return { pkCols: [], fkMap: new Map() }; }
+  } catch { return { pkCols: [], fkMap: new Map(), enumMap: new Map() }; }
 }
 
 // ── Tab system (results) ──
@@ -334,7 +341,7 @@ async function handleFkClick(refTable, refCol, value) {
   try {
     const fkSql = `SELECT * FROM ${quoteId(refTable)} WHERE ${quoteId(refCol)} = ${placeholder(1)}`;
     const result = await bridge.query(fkSql, [value]);
-    const { pkCols, fkMap } = await getTableMeta(refTable);
+    const { pkCols, fkMap, enumMap } = await getTableMeta(refTable);
 
     const tabId = ++tabIdSeq;
     const rowCount = (r) => `${r.rowCount} row${r.rowCount !== 1 ? 's' : ''} · ${r.durationMs}ms`;
@@ -366,6 +373,7 @@ async function handleFkClick(refTable, refCol, value) {
         onReload: reloadFkTab,
         onFkClick: handleFkClick,
         fkMap,
+        enumMap,
       };
     }
 
@@ -570,19 +578,32 @@ const schema = new SchemaTree({
     resultsMeta.classList.add('hidden');
     currentDatabase = db;
     savedQueries.setContext(currentConnection, currentDatabase);
+    erd.hasContent = false;   // diagrama de la base anterior queda obsoleto
+    erd.hide();               // oculta y esconde el botón (se recarga al reabrir del menú)
   },
 });
 
 // ── Schema diagram (ER) ──
+const btnErdToggle = document.getElementById('btn-erd-toggle');
+function syncErdToggle() {
+  // El botón aparece una vez que el diagrama tiene contenido; refleja si está visible.
+  btnErdToggle.classList.toggle('hidden', !(erd.visible || erd.hasContent));
+  btnErdToggle.classList.toggle('active', erd.visible);
+}
+
 const erd = new ERDiagram({
   panelEl: document.getElementById('erd-panel'),
   fetchGraph: () => bridge.schemaGraph(),
   getContext: () => ({ connection: currentConnection, database: currentDatabase }),
+  onVisibilityChange: () => syncErdToggle(),
   onSelectTable: (tableName) => {
-    erd.close();
+    // Abre la query en una pestaña nueva y OCULTA el diagrama (para ver el resultado).
+    // El diagrama queda intacto: se reabre con el botón ⬡ del toolbar, sin recargar.
     openTableSelect(tableName);
+    erd.hide();
   },
 });
+btnErdToggle.addEventListener('click', () => erd.toggle());
 
 // ── Health check ──
 let bridgeWasConnected = false;
@@ -921,7 +942,7 @@ async function renderResults(result, sql, keepFkTabs = false) {
   const sourceTable = detectSourceTable(sql);
 
   if (!isReadOnly && sourceTable) {
-    const { pkCols, fkMap } = await getTableMeta(sourceTable);
+    const { pkCols, fkMap, enumMap } = await getTableMeta(sourceTable);
     const metaText = `${result.rowCount} row${result.rowCount !== 1 ? 's' : ''} · ${result.durationMs}ms · ✎ editable`;
     const callbacks = {
       onUpdate: (fieldName, parsed, snapshot) =>
@@ -932,6 +953,7 @@ async function renderResults(result, sql, keepFkTabs = false) {
       onReload: reloadResults,
       onFkClick: handleFkClick,
       fkMap,
+      enumMap,
     };
     _setMainTab(result.fields, result.rows, true, callbacks, fkMap, metaText, keepFkTabs);
   } else {
@@ -975,7 +997,12 @@ async function describeTable(tableName) {
       { name: 'is_nullable',    dataTypeID: 0 },
       { name: 'column_default', dataTypeID: 0 },
     ];
-    const rows = columns.map(c => [c.column_name, c.data_type, c.is_nullable, c.column_default]);
+    const rows = columns.map(c => [
+      c.column_name,
+      c.enumValues ? `${c.data_type}(${c.enumValues.join(', ')})` : c.data_type,
+      c.is_nullable,
+      c.column_default,
+    ]);
     _openSideTab(
       `DESCRIBE ${tableName}`,
       fields, rows,
@@ -1014,6 +1041,19 @@ function showState(state, errorMsg) {
 // ── Event listeners ──
 btnRun.addEventListener('click', runQuery);
 btnRunAll.addEventListener('click', runAllQueries);
+
+// ── Tooltips de los botones (con shortcut donde aplica) ──
+(() => {
+  const MOD = /mac/i.test(navigator.platform || '') ? '⌘' : 'Ctrl';
+  const set = (id, text) => { const el = document.getElementById(id); if (el) el.title = text; };
+  set('btn-settings',    'Settings');
+  set('btn-theme',       'Toggle light / dark theme');
+  set('btn-erd-toggle',  'Show / hide schema diagram');
+  set('btn-network',     'Network requests → SQL');
+  set('btn-save-query',  `Save query (${MOD}+S)`);
+  set('btn-run',         `Run query (${MOD}+Enter)`);
+  set('btn-run-all',     `Run all statements (${MOD}+Shift+Enter)`);
+})();
 
 editor.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {

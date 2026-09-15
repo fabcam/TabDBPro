@@ -1462,6 +1462,28 @@
             prod, staging or a client's set when you juggle many connections.</div>
         </div>
 
+        <div class="feature-card">
+          <div class="feature-icon fi-teal">▶▶</div>
+          <div class="feature-title">Run multiple statements</div>
+          <div class="feature-desc">Run every statement in the editor at once (or just your selection) — each query opens
+            its own result tab. A real splitter that respects strings and comments.</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon fi-red">🛑</div>
+          <div class="feature-title">"Ask before writes" mode</div>
+          <div class="feature-desc">Per-connection access: read-only, read-write, or <strong>ask before writes</strong> —
+            a confirmation with the exact SQL before every UPDATE / INSERT / DELETE. Fewer accidents on prod.</div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon fi-purple">🔽</div>
+          <div class="feature-title">Enum-aware editing</div>
+          <div class="feature-desc">Columns backed by an enum show their allowed values in <code
+              style="font-size:11px;color:var(--teal)">DESCRIBE</code> and become a dropdown when you edit or insert —
+            no more guessing valid values.</div>
+        </div>
+
       </div>
 
       <!-- Secondary features row -->
@@ -1486,9 +1508,9 @@
         </div>
         <div class="feature-card" style="padding:18px">
           <div style="font-size:20px;margin-bottom:8px">🌗</div>
-          <div class="feature-title" style="font-size:13px">Auto Dark / Light</div>
-          <div class="feature-desc" style="font-size:12px">Follows your system theme. Looks native whether you're a
-            dark-mode purist or not.</div>
+          <div class="feature-title" style="font-size:13px">Dark / Light theme</div>
+          <div class="feature-desc" style="font-size:12px">Follows your system by default, or flip it with one click — your
+            choice is remembered.</div>
         </div>
         <div class="feature-card" style="padding:18px">
           <div style="font-size:20px;margin-bottom:8px">↔️</div>
@@ -1500,6 +1522,12 @@
           <div style="font-size:20px;margin-bottom:8px">💾</div>
           <div class="feature-title" style="font-size:13px">Database Dump</div>
           <div class="feature-desc" style="font-size:12px">Right-click any database in the sidebar to download a <code style="font-size:11px;color:var(--teal)">.sql</code> backup via <code style="font-size:11px;color:var(--teal)">pg_dump</code> or <code style="font-size:11px;color:var(--teal)">mysqldump</code>. No extra config needed.</div>
+        </div>
+        <div class="feature-card" style="padding:18px">
+          <div style="font-size:20px;margin-bottom:8px">🗂️</div>
+          <div class="feature-title" style="font-size:13px">Persistent query tabs</div>
+          <div class="feature-desc" style="font-size:12px">Your open query tabs and their SQL survive a reload. Close them
+            one by one or all at once.</div>
         </div>
       </div>
 
@@ -1595,9 +1623,23 @@
       <div class="release-list">
         <div class="release-item">
           <div class="release-head">
+            <span class="release-ver">v0.3.0</span>
+            <span class="release-date">Sep 15, 2026</span>
+            <span class="release-badge">Latest</span>
+          </div>
+          <p class="release-notes">
+            Run multiple statements at once (one result tab per query) · "Ask before writes" confirmation mode ·
+            Enum-aware editing (dropdowns in edit &amp; insert) · Persistent query tabs + "Close all" ·
+            Light / dark theme toggle · ER diagram: click a table to focus &amp; export just its relations, show/hide
+            without losing it.
+          </p>
+          <a class="release-link" href="https://github.com/fabcam/TabDBPro/releases/tag/v0.3.0" target="_blank"
+            rel="noopener">View release on GitHub ↗</a>
+        </div>
+        <div class="release-item">
+          <div class="release-head">
             <span class="release-ver">v0.2.0</span>
             <span class="release-date">Sep 14, 2026</span>
-            <span class="release-badge">Latest</span>
           </div>
           <p class="release-notes">
             Schema ER diagram (from the database menu) with SVG export · Export query results to CSV / JSON / INSERT ·

@@ -1,11 +1,30 @@
+const STORE_KEY = 'tabdb_editor_tabs';
+
 export class EditorTabs {
   constructor({ containerEl, editor }) {
     this._container = containerEl;
     this._editor = editor;
-    this._tabs = [{ id: 1, label: 'Query 1', sql: '' }];
-    this._activeId = 1;
-    this._seq = 1;
+
+    const restored = this._restore();
+    if (restored) {
+      this._tabs = restored.tabs;
+      this._activeId = restored.activeId;
+      this._seq = restored.seq;
+    } else {
+      this._tabs = [{ id: 1, label: 'Query 1', sql: '' }];
+      this._activeId = 1;
+      this._seq = 1;
+    }
+
+    this._editor.value = this.activeTab?.sql ?? '';
     this._render();
+
+    // Persistir el contenido tipeado (debounced) en la pestaña activa.
+    this._editor.addEventListener('input', () => {
+      const t = this.activeTab;
+      if (t) t.sql = this._editor.value;
+      this._persistDebounced();
+    });
   }
 
   get activeTab() {
@@ -23,6 +42,16 @@ export class EditorTabs {
 
   closeActive() {
     this._close(this._activeId);
+  }
+
+  // Cierra todas las pestañas y deja una vacía.
+  closeAll() {
+    this._tabs = [{ id: 1, label: 'Query 1', sql: '' }];
+    this._activeId = 1;
+    this._seq = 1;
+    this._editor.value = '';
+    this._render();
+    this._editor.focus();
   }
 
   updateActiveTab(label, savedId) {
@@ -70,6 +99,36 @@ export class EditorTabs {
     this._render();
   }
 
+  // ── Persistencia (localStorage, por perfil de navegador) ──
+  _persist() {
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify({
+        tabs: this._tabs, activeId: this._activeId, seq: this._seq,
+      }));
+    } catch { /* storage no disponible */ }
+  }
+
+  _persistDebounced() {
+    clearTimeout(this._persistT);
+    this._persistT = setTimeout(() => this._persist(), 300);
+  }
+
+  _restore() {
+    try {
+      const raw = localStorage.getItem(STORE_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      if (!Array.isArray(data.tabs) || data.tabs.length === 0) return null;
+      const tabs = data.tabs
+        .filter(t => t && typeof t.id === 'number')
+        .map(t => ({ id: t.id, label: t.label ?? `Query ${t.id}`, sql: t.sql ?? '', savedId: t.savedId ?? null }));
+      if (tabs.length === 0) return null;
+      const activeId = tabs.some(t => t.id === data.activeId) ? data.activeId : tabs[0].id;
+      const seq = Math.max(data.seq ?? 1, ...tabs.map(t => t.id));
+      return { tabs, activeId, seq };
+    } catch { return null; }
+  }
+
   _render() {
     this._container.innerHTML = '';
     for (const tab of this._tabs) {
@@ -101,5 +160,16 @@ export class EditorTabs {
     addBtn.title = 'New query tab';
     addBtn.addEventListener('click', () => this._addTab());
     this._container.appendChild(addBtn);
+
+    if (this._tabs.length > 1) {
+      const closeAllBtn = document.createElement('button');
+      closeAllBtn.className = 'tab-closeall-btn';
+      closeAllBtn.textContent = 'Close all';
+      closeAllBtn.title = 'Close all tabs';
+      closeAllBtn.addEventListener('click', () => this.closeAll());
+      this._container.appendChild(closeAllBtn);
+    }
+
+    this._persist();
   }
 }

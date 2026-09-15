@@ -25,6 +25,7 @@ export class ResultsTable {
     this._fields = fields;
     this._rows = rows;
     this._fkMap = callbacks.fkMap ?? new Map();
+    this._enumMap = callbacks.enumMap ?? new Map();
     this._callbacks = callbacks;
     this._editable = true;
     this._sortState = { col: -1, dir: 0 };
@@ -118,11 +119,27 @@ export class ResultsTable {
     const inputs = fields.map(f => {
       const td = document.createElement('td');
       td.className = 'td-insert';
-      const inp = document.createElement('input');
-      inp.className = 'cell-input';
-      inp.placeholder = f.name;
-      inp.title = 'Empty → default  |  NULL → null  |  now() / uuid() → SQL expression';
-      inp.addEventListener('input', () => this._applyValueStyles(inp));
+      const enumVals = this._enumMap?.get(f.name);
+      let inp;
+      if (enumVals && enumVals.length) {
+        inp = document.createElement('select');
+        inp.className = 'cell-input';
+        inp.title = `${f.name} (enum) — vacío → default/null`;
+        const blank = document.createElement('option');
+        blank.value = ''; blank.textContent = `(${f.name})`;
+        inp.appendChild(blank);
+        for (const v of enumVals) {
+          const o = document.createElement('option');
+          o.value = v; o.textContent = v;
+          inp.appendChild(o);
+        }
+      } else {
+        inp = document.createElement('input');
+        inp.className = 'cell-input';
+        inp.placeholder = f.name;
+        inp.title = 'Empty → default  |  NULL → null  |  now() / uuid() → SQL expression';
+        inp.addEventListener('input', () => this._applyValueStyles(inp));
+      }
       td.appendChild(inp);
       tr.appendChild(td);
       return inp;
@@ -218,7 +235,7 @@ export class ResultsTable {
   }
 
   _startEdit(td, fieldName, snapshot) {
-    if (td.querySelector('input')) return;
+    if (td.querySelector('input, select')) return;   // ya está en edición (input o select enum)
 
     const isNull = td.classList.contains('null-cell');
     // For FK cells the value lives in a <span>; fall back to textContent for plain cells
@@ -226,15 +243,31 @@ export class ResultsTable {
     let cancelled = false;
     let confirmed = false;
 
-    const inp = document.createElement('input');
-    inp.type = 'text';
-    inp.value = originalText;
-    inp.className = 'cell-input cell-input-inline';
+    const enumVals = this._enumMap?.get(fieldName);
+    let inp;
+    if (enumVals && enumVals.length) {
+      inp = document.createElement('select');
+      inp.className = 'cell-input cell-input-inline';
+      const blank = document.createElement('option');
+      blank.value = ''; blank.textContent = '(null)';
+      inp.appendChild(blank);
+      for (const v of enumVals) {
+        const o = document.createElement('option');
+        o.value = v; o.textContent = v;
+        inp.appendChild(o);
+      }
+      inp.value = isNull ? '' : originalText;
+    } else {
+      inp = document.createElement('input');
+      inp.type = 'text';
+      inp.value = originalText;
+      inp.className = 'cell-input cell-input-inline';
+    }
     td.innerHTML = '';
     td.classList.remove('null-cell', 'td-fk');
     td.appendChild(inp);
     inp.focus();
-    inp.select();
+    inp.select?.();
 
     inp.addEventListener('input', () => this._applyValueStyles(inp));
 
@@ -283,6 +316,7 @@ export class ResultsTable {
       if (e.key === 'Escape') { e.preventDefault(); cancel(); }
     });
     inp.addEventListener('blur', confirm);
+    if (inp.tagName === 'SELECT') inp.addEventListener('change', confirm);
   }
 
   _setValue(td, value) {

@@ -1,6 +1,6 @@
 {
   "name": "tabdb-pro-bridge",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Local bridge service for TabDB Pro Chrome DevTools extension",
   "type": "module",
   "bin": {
