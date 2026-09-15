@@ -46,6 +46,7 @@
         <span id="status-text" class="status-text">Checking bridge...</span>
         <span id="conn-badge" class="conn-badge hidden"></span>
         <button id="btn-settings" class="icon-btn" title="Settings">⚙</button>
+        <button id="btn-theme" class="icon-btn" title="Toggle light/dark theme">🌙</button>
         <div class="spacer"></div>
         <label class="toolbar-label">Limit
           <select id="select-limit">
@@ -57,6 +58,7 @@
         </label>
         <button id="btn-network" class="icon-btn" title="Network requests">⇅</button>
         <button id="btn-save-query" class="icon-btn" title="Save current query (Ctrl+S)">★</button>
+        <button id="btn-run-all" class="icon-btn" title="Run all statements (Ctrl/Cmd+Shift+Enter)">▶▶</button>
         <button id="btn-run" class="btn-primary" title="Run query (Ctrl+Enter)">▶ Run</button>
       </div>
 
@@ -151,6 +153,25 @@
     <div class="context-item" data-action="select">SELECT * FROM …</div>
     <div class="context-separator"></div>
     <div class="context-item" data-action="copy">Copy name</div>
+  </div>
+
+  <!-- Confirm write modal -->
+  <div id="confirm-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">Confirm write</span>
+        <button id="confirm-close" class="modal-close-btn">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="confirm-text">This statement will modify data:</p>
+        <pre id="confirm-sql" class="confirm-sql"></pre>
+        <div id="confirm-params" class="confirm-params hidden"></div>
+        <div class="modal-actions">
+          <button id="confirm-cancel" class="btn-sm">Cancel</button>
+          <button id="confirm-run" class="btn-primary">Run</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Error modal -->

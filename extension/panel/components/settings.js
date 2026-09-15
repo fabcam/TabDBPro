@@ -84,7 +84,7 @@ export class Settings {
     header.append(text('span', 'Connections', 'settings-section-title'));
     const addBtn = btn('+ Add', 'btn-sm', () => {
       this._editIdx = -1;
-      this._draft = { name: '', type: 'postgres', host: 'localhost', port: 5432, database: '', user: '', password: '', readOnly: false, color: CONN_COLORS[0] };
+      this._draft = { name: '', type: 'mysql', host: 'localhost', port: 3306, database: '', user: '', password: '', readOnly: false, color: CONN_COLORS[0] };
       this._render();
     });
     header.appendChild(addBtn);
@@ -103,7 +103,7 @@ export class Settings {
         const dot = el('span', 'conn-dot');
         dot.style.background = c.color ?? CONN_COLORS[0];
         const nameEl = text('span', c.name, 'settings-conn-name');
-        const roTag = c.readOnly ? ' · read-only' : '';
+        const roTag = c.readOnly ? ' · read-only' : (c.confirmWrites ? ' · confirm writes' : '');
         const sub = text('span', `${c.type} · ${c.host}:${c.port} / ${c.database}${roTag}`, 'settings-conn-sub');
         info.append(dot, nameEl, sub);
 
@@ -211,11 +211,20 @@ export class Settings {
       portEl.value = typeEl.value === 'mysql' ? '3306' : '5432';
     });
 
-    const roLabel = el('label', 'settings-ro-label');
-    const roCheck = document.createElement('input');
-    roCheck.type = 'checkbox';
-    roCheck.checked = d.readOnly ?? false;
-    roLabel.append(roCheck, ' Read-only mode');
+    // Modo de acceso: Read-write / Ask before writes / Read-only
+    const accessSel = document.createElement('select');
+    accessSel.className = 'modal-input';
+    for (const [val, label] of [
+      ['readwrite', 'Read-write'],
+      ['confirm',   'Ask before writes'],
+      ['readonly',  'Read-only'],
+    ]) {
+      const o = document.createElement('option');
+      o.value = val;
+      o.textContent = label;
+      accessSel.appendChild(o);
+    }
+    accessSel.value = d.readOnly ? 'readonly' : (d.confirmWrites ? 'confirm' : 'readwrite');
 
     // Color picker
     let selectedColor = d.color ?? CONN_COLORS[0];
@@ -315,7 +324,7 @@ export class Settings {
       field('Username',  userEl),
       field('Password',  pwWrap),
       field('Color',     colorWrap),
-      field('',          roLabel),
+      field('Access',    accessSel),
       field('',          sshToggleLabel),
       sshFields,
     );
@@ -368,7 +377,8 @@ export class Settings {
         user:     userEl.value.trim(),
         password: pwEl.value,
         color:    selectedColor,
-        readOnly: roCheck.checked,
+        readOnly:      accessSel.value === 'readonly',
+        confirmWrites: accessSel.value === 'confirm',
         ssh: sshCheck.checked ? {
           host:              sshHostEl.value.trim(),
           port:              parseInt(sshPortEl.value, 10) || 22,

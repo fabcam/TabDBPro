@@ -19,9 +19,33 @@ const bridge = new BridgeClient(BRIDGE_URL);
 
 const LAST_CONN_KEY = 'last_connection';
 
+// ── Theme (sigue al sistema por defecto; si el usuario elige, se persiste) ──
+const THEME_KEY = 'tabdb_theme';
+const systemTheme = () => window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+const storedTheme = () => { try { return localStorage.getItem(THEME_KEY); } catch { return null; } };
+const effectiveTheme = () => storedTheme() || systemTheme();
+function applyTheme() {
+  const t = storedTheme();
+  if (t) document.documentElement.dataset.theme = t;
+  else delete document.documentElement.dataset.theme;   // sin override → sigue al sistema
+  const btn = document.getElementById('btn-theme');
+  if (btn) btn.textContent = effectiveTheme() === 'light' ? '☀️' : '🌙';
+}
+applyTheme();
+document.getElementById('btn-theme').addEventListener('click', () => {
+  const next = effectiveTheme() === 'light' ? 'dark' : 'light';
+  try { localStorage.setItem(THEME_KEY, next); } catch {}
+  applyTheme();
+});
+// Cambios del sistema solo afectan si no hay override manual guardado.
+window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+  if (!storedTheme()) applyTheme();
+});
+
 // ── DOM refs ──
 const editor = document.getElementById('editor');
 const btnRun = document.getElementById('btn-run');
+const btnRunAll = document.getElementById('btn-run-all');
 const btnSaveQuery = document.getElementById('btn-save-query');
 const selectLimit = document.getElementById('select-limit');
 const statusDot = document.getElementById('status-indicator');
@@ -338,7 +362,7 @@ async function handleFkClick(refTable, refCol, value) {
         onUpdate: (fieldName, parsed, snapshot) =>
           handleUpdate(refTable, result.fields, fieldName, parsed, snapshot, pkCols),
         onInsert: (fields, values) => handleInsert(refTable, fields, values, reloadFkTab),
-        onError: showErrorModal,
+        onError: handleWriteError,
         onReload: reloadFkTab,
         onFkClick: handleFkClick,
         fkMap,
@@ -357,13 +381,28 @@ async function handleFkClick(refTable, refCol, value) {
 // ── Context menu ──
 const contextMenu = new ContextMenu(document.getElementById('table-context-menu'));
 
+// Al abrir una tabla, si tiene una columna de fecha de creación, ordenar por ella desc.
+const CREATED_COLS = ['created_at', 'createdat', 'created'];
+async function buildTableSelect(tableName) {
+  let orderBy = '';
+  try {
+    const res = await bridge.tableSchema(tableName);
+    const byLower = new Map((res?.columns || []).map((c) => [String(c.column_name).toLowerCase(), c.column_name]));
+    for (const cand of CREATED_COLS) {
+      if (byLower.has(cand)) { orderBy = `\nORDER BY ${quoteId(byLower.get(cand))} DESC`; break; }
+    }
+  } catch { /* sin schema → sin order by */ }
+  return `SELECT *\nFROM ${tableName}${orderBy}\nLIMIT 100;`;
+}
+async function openTableSelect(tableName) {
+  editorTabs.openQuery(await buildTableSelect(tableName), tableName);
+  runQuery();
+}
+
 contextMenu
   .on('describe', ({ tableName }) => describeTable(tableName))
   .on('indexes',  ({ tableName }) => showIndexes(tableName))
-  .on('select',   ({ tableName }) => {
-    editorTabs.openQuery(`SELECT *\nFROM ${tableName}\nLIMIT 100;`, tableName);
-    runQuery();
-  })
+  .on('select',   ({ tableName }) => openTableSelect(tableName))
   .on('copy', ({ tableName }) => navigator.clipboard.writeText(tableName));
 
 // ── Pivot table ──
@@ -518,10 +557,7 @@ const schema = new SchemaTree({
   dbListEl: document.getElementById('db-list'),
   tableListEl: document.getElementById('table-list'),
   dbLabelEl: document.getElementById('db-label'),
-  onTableClick: (tableName) => {
-    editorTabs.openQuery(`SELECT *\nFROM ${tableName}\nLIMIT 100;`, tableName);
-    runQuery();
-  },
+  onTableClick: (tableName) => openTableSelect(tableName),
   onDescribeTable: ({ tableName, x, y }) => {
     contextMenu.show(x, y, { tableName });
   },
@@ -544,8 +580,7 @@ const erd = new ERDiagram({
   getContext: () => ({ connection: currentConnection, database: currentDatabase }),
   onSelectTable: (tableName) => {
     erd.close();
-    editorTabs.openQuery(`SELECT *\nFROM ${tableName}\nLIMIT 100;`, tableName);
-    runQuery();
+    openTableSelect(tableName);
   },
 });
 
@@ -683,6 +718,7 @@ async function handleUpdate(tableName, fields, fieldName, parsed, snapshot, pkCo
     }).join(' AND ');
   }
   const sql = `UPDATE ${quoteId(tableName)} SET ${setClause} WHERE ${where}`;
+  if (currentConfirmWrites() && !(await confirmWrite(sql, params))) throw new Error(WRITE_CANCELLED);
   await bridge.query(sql, params);
 }
 
@@ -711,10 +747,9 @@ async function handleInsert(tableName, fields, values, reloadFn = reloadResults)
     return placeholder(params.length);
   }).join(', ');
 
-  await bridge.query(
-    `INSERT INTO ${quoteId(tableName)} (${cols}) VALUES (${placeholders})`,
-    params
-  );
+  const sql = `INSERT INTO ${quoteId(tableName)} (${cols}) VALUES (${placeholders})`;
+  if (currentConfirmWrites() && !(await confirmWrite(sql, params))) throw new Error(WRITE_CANCELLED);
+  await bridge.query(sql, params);
   await reloadFn();
 }
 
@@ -726,11 +761,61 @@ async function reloadResults() {
   } catch { /* ignore reload errors */ }
 }
 
+// ── Confirmación de escritura (modo "Ask before writes" por conexión) ──
+const WRITE_CANCELLED = '__write_cancelled__';   // sentinel: usuario canceló, no mostrar error
+const handleWriteError = (msg) => { if (msg !== WRITE_CANCELLED) showErrorModal(msg); };
+const confirmModal    = document.getElementById('confirm-modal');
+const confirmSqlEl    = document.getElementById('confirm-sql');
+const confirmParamsEl = document.getElementById('confirm-params');
+const confirmRunBtn   = document.getElementById('confirm-run');
+let _confirmResolve = null;
+function _closeConfirm(result) {
+  confirmModal.classList.add('hidden');
+  const r = _confirmResolve; _confirmResolve = null;
+  if (r) r(result);
+}
+confirmRunBtn.addEventListener('click', () => _closeConfirm(true));
+document.getElementById('confirm-cancel').addEventListener('click', () => _closeConfirm(false));
+document.getElementById('confirm-close').addEventListener('click', () => _closeConfirm(false));
+// Enter/Escape dentro del modal (evita que el Enter se filtre al insert-row de atrás).
+confirmModal.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter')  { e.preventDefault(); e.stopPropagation(); _closeConfirm(true); }
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); _closeConfirm(false); }
+});
+
+function confirmWrite(sql, params = []) {
+  if (_confirmResolve) _closeConfirm(false);   // cancela cualquier confirmación colgada
+  confirmSqlEl.textContent = sql;
+  if (params && params.length) {
+    confirmParamsEl.textContent = 'Parameters: ' + params.map(v => v === null ? 'NULL' : JSON.stringify(v)).join(', ');
+    confirmParamsEl.classList.remove('hidden');
+  } else {
+    confirmParamsEl.classList.add('hidden');
+  }
+  return new Promise((resolve) => {
+    _confirmResolve = resolve;
+    confirmModal.classList.remove('hidden');
+    confirmRunBtn.focus();   // saca el foco del input de atrás; Enter confirma el modal
+  });
+}
+
+// ¿La conexión actual está en modo "confirmar antes de escribir"?
+function currentConfirmWrites() {
+  const c = settings.config.connections.find((x) => x.name === currentConnection);
+  return !!c?.confirmWrites;
+}
+
+// Detecta si un SQL arbitrario es una sentencia de escritura (ignora comentarios/espacios iniciales).
+const WRITE_RE = /^\s*(?:--[^\n]*\n|\/\*[\s\S]*?\*\/|\s)*(insert|update|delete|drop|alter|truncate|create|replace|merge|grant|revoke)\b/i;
+const isWriteSql = (sql) => WRITE_RE.test(sql);
+
 // ── Run query ──
 async function runQuery() {
   editorTabs.syncFromEditor();
   const sql = buildSql();
   if (!sql) return;
+
+  if (currentConfirmWrites() && isWriteSql(sql) && !(await confirmWrite(sql))) return;
 
   lastSql = sql;
   showState('loading');
@@ -747,6 +832,91 @@ async function runQuery() {
   }
 }
 
+// ── Run all: ejecuta todas las sentencias del editor (o de la selección) ──
+// Divide por ';' respetando strings ('...', "...", `...`) y comentarios (-- , /* */).
+function splitStatements(sql) {
+  const out = [];
+  let cur = '';
+  let inS = false, inD = false, inB = false, inLine = false, inBlock = false;
+  for (let i = 0; i < sql.length; i++) {
+    const c = sql[i], next = sql[i + 1];
+    if (inLine)  { cur += c; if (c === '\n') inLine = false; continue; }
+    if (inBlock) { cur += c; if (c === '*' && next === '/') { cur += next; i++; inBlock = false; } continue; }
+    if (inS) { cur += c; if (c === "'") inS = false; continue; }
+    if (inD) { cur += c; if (c === '"') inD = false; continue; }
+    if (inB) { cur += c; if (c === '`') inB = false; continue; }
+    if (c === '-' && next === '-') { inLine = true; cur += c; continue; }
+    if (c === '/' && next === '*') { inBlock = true; cur += c; continue; }
+    if (c === "'") { inS = true; cur += c; continue; }
+    if (c === '"') { inD = true; cur += c; continue; }
+    if (c === '`') { inB = true; cur += c; continue; }
+    if (c === ';') { out.push(cur); cur = ''; continue; }
+    cur += c;
+  }
+  if (cur.trim()) out.push(cur);
+  return out.map((s) => s.trim()).filter(Boolean);
+}
+
+const stmtLabel = (stmt) => {
+  const one = stmt.replace(/\s+/g, ' ').trim();
+  return one.length > 22 ? one.slice(0, 21) + '…' : one;
+};
+
+function _setResultTabsFromResults(items) {
+  _pivotOff();
+  tabStore.length = 0;
+  items.forEach(({ stmt, res }, i) => {
+    const isWrite = !res.fields || res.fields.length === 0;
+    let fields = res.fields || [];
+    let rows = res.rows || [];
+    let metaText;
+    if (isWrite) {
+      fields = [{ name: 'status', dataTypeID: 0 }];
+      rows = [[`${res.rowCount ?? 0} row(s) affected`]];
+      metaText = `${res.rowCount ?? 0} affected · ${res.durationMs}ms`;
+    } else {
+      metaText = `${res.rowCount} row${res.rowCount !== 1 ? 's' : ''} · ${res.durationMs}ms`;
+    }
+    tabStore.push({
+      id: i === 0 ? 0 : ++tabIdSeq,
+      label: `${i + 1}: ${stmtLabel(stmt)}`,
+      fields, rows, editable: false, callbacks: null, fkMap: new Map(), metaText,
+    });
+  });
+  activeTabId = tabStore[0]?.id ?? null;
+  _refreshTabBar();
+  _renderActiveTab();
+}
+
+async function runAllQueries() {
+  editorTabs.syncFromEditor();
+  const { selectionStart, selectionEnd, value } = editor;
+  const source = selectionStart !== selectionEnd ? value.slice(selectionStart, selectionEnd) : value;
+  const statements = splitStatements(source);
+  if (statements.length <= 1) return runQuery();   // una sola → flujo normal
+
+  showState('loading');
+  btnRunAll.disabled = btnRun.disabled = true;
+  const results = [];
+  let failed = null;
+  try {
+    for (const stmt of statements) {
+      if (currentConfirmWrites() && isWriteSql(stmt) && !(await confirmWrite(stmt))) break; // cancelado
+      const res = await bridge.query(stmt);
+      history.add(stmt);
+      results.push({ stmt, res });
+    }
+  } catch (err) {
+    failed = err.message;
+  } finally {
+    btnRunAll.disabled = btnRun.disabled = false;
+  }
+
+  if (results.length) _setResultTabsFromResults(results);
+  else if (!failed) showState('empty');
+  if (failed) showErrorModal(`Statement ${results.length + 1} failed:\n${failed}`);
+}
+
 async function renderResults(result, sql, keepFkTabs = false) {
   const sourceTable = detectSourceTable(sql);
 
@@ -758,7 +928,7 @@ async function renderResults(result, sql, keepFkTabs = false) {
         handleUpdate(sourceTable, result.fields, fieldName, parsed, snapshot, pkCols),
       onInsert: (fields, values) =>
         handleInsert(sourceTable, fields, values, reloadResults),
-      onError: showErrorModal,
+      onError: handleWriteError,
       onReload: reloadResults,
       onFkClick: handleFkClick,
       fkMap,
@@ -843,11 +1013,12 @@ function showState(state, errorMsg) {
 
 // ── Event listeners ──
 btnRun.addEventListener('click', runQuery);
+btnRunAll.addEventListener('click', runAllQueries);
 
 editor.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
     e.preventDefault();
-    runQuery();
+    e.shiftKey ? runAllQueries() : runQuery();
   }
   if ((e.ctrlKey || e.metaKey) && e.key === 's') {
     e.preventDefault();
