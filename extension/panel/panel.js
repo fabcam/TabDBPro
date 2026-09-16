@@ -567,6 +567,7 @@ const connectionSelector = new ConnectionSelector({
   listEl: document.getElementById('connection-list'),
   getColor: (name) => getConnColor(name),
   beforeSwitch: (name) => ensureUnlocked(name),   // Touch ID si la conexión lo requiere
+  onSwitchStart: () => schema.clear(),            // limpia bases/tablas ya, sin esperar el fetch
   onSwitch: async (name) => {
     clearTableMetaCache();
     showState('empty');

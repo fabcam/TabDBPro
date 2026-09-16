@@ -1,11 +1,12 @@
 import { colorName } from './settings.js';
 
 export class ConnectionSelector {
-  constructor({ sectionEl, listEl, onSwitch, getColor, beforeSwitch }) {
+  constructor({ sectionEl, listEl, onSwitch, getColor, beforeSwitch, onSwitchStart }) {
     this.sectionEl = sectionEl;
     this.listEl = listEl;
     this.onSwitch = onSwitch;
-    this.beforeSwitch = beforeSwitch;   // async (name) → bool; si false, no cambia
+    this.beforeSwitch = beforeSwitch;     // async (name) → bool; si false, no cambia
+    this.onSwitchStart = onSwitchStart;   // se llama apenas se confirma el cambio (para limpiar UI)
     this.getColor  = getColor ?? (() => null);
     this.currentName = null;
     this.activeFilter = null;   // color actualmente filtrado, o null = todas
@@ -93,10 +94,11 @@ export class ConnectionSelector {
         item.classList.add('switching');
         try {
           if (this.beforeSwitch && !(await this.beforeSwitch(conn.name))) return;   // p.ej. Touch ID
-          await this._bridge.useConnection(conn.name);
           this.currentName = conn.name;
           this.listEl.querySelectorAll('.conn-item').forEach((el) => el.classList.remove('active'));
           item.classList.add('active');
+          this.onSwitchStart?.();                        // limpiar bases/tablas de inmediato
+          await this._bridge.useConnection(conn.name);
           this.onSwitch?.(conn.name);
         } catch (err) {
           this._showError(err.message);

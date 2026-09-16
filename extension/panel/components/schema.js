@@ -15,6 +15,9 @@ export class SchemaTree {
   get tableNames() { return this._tables.map(t => t.table_name); }
 
   async load(bridge) {
+    // Limpiar bases y tablas de inmediato (evita mostrar lo de la conexión anterior
+    // mientras llega lo nuevo).
+    this._setDatabasesLoading();
     this._setTablesLoading();
     try {
       const { databases, current } = await bridge.databases();
@@ -155,5 +158,18 @@ export class SchemaTree {
 
   _setTablesLoading() {
     this.tableListEl.innerHTML = '<div class="sidebar-msg">Loading...</div>';
+  }
+
+  _setDatabasesLoading() {
+    this.dbListEl.innerHTML = '<div class="sidebar-msg">Loading...</div>';
+    if (this.dbLabelEl) this.dbLabelEl.textContent = '…';
+  }
+
+  // Limpia bases y tablas de inmediato (para llamar al empezar un cambio de conexión).
+  clear() {
+    this._tables = [];
+    this.activeTable = null;
+    this._setDatabasesLoading();
+    this._setTablesLoading();
   }
 }
