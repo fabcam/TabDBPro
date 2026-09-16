@@ -13,6 +13,7 @@ import { SqlAutocomplete }  from './components/autocomplete.js';
 import { ERDiagram }        from './components/erd.js';
 import { EXPORT_META, guessTableName } from './components/export-results.js';
 import { buildPivot, guessValueField } from './components/pivot.js';
+import { requestUnlock } from './components/biometric.js';
 
 const BRIDGE_URL = 'http://127.0.0.1:47321';
 const bridge = new BridgeClient(BRIDGE_URL);
@@ -210,6 +211,20 @@ let lastSql = '';
 let currentConnection = '';
 let currentDatabase = '';
 const tableMetaCache = new Map();
+
+// ── Desbloqueo biométrico (Touch ID) opt-in por conexión ──
+const unlockedConnections = new Set();   // conexiones desbloqueadas en esta sesión
+function connRequiresBio(name) {
+  return !!settings.config.connections.find(c => c.name === name)?.requireBiometric;
+}
+// Garantiza que la conexión esté desbloqueada (una vez por sesión). Devuelve bool.
+async function ensureUnlocked(name) {
+  if (!name || !connRequiresBio(name)) return true;
+  if (unlockedConnections.has(name)) return true;
+  const ok = await requestUnlock();
+  if (ok) unlockedConnections.add(name);
+  return ok;
+}
 
 function clearTableMetaCache() { tableMetaCache.clear(); }
 
@@ -551,6 +566,7 @@ const connectionSelector = new ConnectionSelector({
   sectionEl: document.getElementById('connection-section'),
   listEl: document.getElementById('connection-list'),
   getColor: (name) => getConnColor(name),
+  beforeSwitch: (name) => ensureUnlocked(name),   // Touch ID si la conexión lo requiere
   onSwitch: async (name) => {
     clearTableMetaCache();
     showState('empty');
@@ -656,10 +672,7 @@ async function checkHealth() {
     if (!bridgeWasConnected) {
       bridgeWasConnected = true;
       connectionSelector.load(bridge);
-      schema.load(bridge).then(() => {
-        currentDatabase = schema.currentDb ?? '';
-        savedQueries.setContext(currentConnection, currentDatabase);
-      });
+      loadActiveConnectionData();
     }
   } catch {
     bridgeWasConnected = false;
@@ -668,6 +681,23 @@ async function checkHealth() {
     editorTabsEl.style.removeProperty('--conn-color');
   }
 }
+
+// Carga el schema de la conexión activa, pidiendo Touch ID si está bloqueada.
+const btnUnlock = document.getElementById('btn-unlock');
+async function loadActiveConnectionData() {
+  if (!(await ensureUnlocked(currentConnection))) {
+    btnUnlock.classList.remove('hidden');
+    setStatus('disconnected', '🔒 Bloqueado — Touch ID requerido');
+    showState('empty');
+    return;
+  }
+  btnUnlock.classList.add('hidden');
+  schema.load(bridge).then(() => {
+    currentDatabase = schema.currentDb ?? '';
+    savedQueries.setContext(currentConnection, currentDatabase);
+  });
+}
+btnUnlock.addEventListener('click', () => loadActiveConnectionData());
 
 function setStatus(state, text) {
   statusDot.className = `status-dot ${state}`;
@@ -860,6 +890,7 @@ async function runQuery() {
   const sql = buildSql();
   if (!sql) return;
 
+  if (!(await ensureUnlocked(currentConnection))) return;   // Touch ID si la conexión lo pide
   if (currentConfirmWrites() && isWriteSql(sql) && !(await confirmWrite(sql))) return;
   await ensureBridgeContext();
 
@@ -941,6 +972,7 @@ async function runAllQueries() {
   const statements = splitStatements(source);
   if (statements.length <= 1) return runQuery();   // una sola → flujo normal
 
+  if (!(await ensureUnlocked(currentConnection))) return;
   await ensureBridgeContext();
   showState('loading');
   btnRunAll.disabled = btnRun.disabled = true;

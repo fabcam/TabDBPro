@@ -104,7 +104,8 @@ export class Settings {
         dot.style.background = c.color ?? CONN_COLORS[0];
         const nameEl = text('span', c.name, 'settings-conn-name');
         const roTag = c.readOnly ? ' · read-only' : (c.confirmWrites ? ' · confirm writes' : '');
-        const sub = text('span', `${c.type} · ${c.host}:${c.port} / ${c.database}${roTag}`, 'settings-conn-sub');
+        const bioTag = c.requireBiometric ? ' · 🔒' : '';
+        const sub = text('span', `${c.type} · ${c.host}:${c.port} / ${c.database}${roTag}${bioTag}`, 'settings-conn-sub');
         info.append(dot, nameEl, sub);
 
         const actions = el('div', 'settings-conn-actions');
@@ -226,6 +227,13 @@ export class Settings {
     }
     accessSel.value = d.readOnly ? 'readonly' : (d.confirmWrites ? 'confirm' : 'readwrite');
 
+    // Desbloqueo biométrico (Touch ID) opt-in por conexión
+    const bioLabel = el('label', 'settings-ro-label');
+    const bioCheck = document.createElement('input');
+    bioCheck.type = 'checkbox';
+    bioCheck.checked = d.requireBiometric ?? false;
+    bioLabel.append(bioCheck, ' Require Touch ID to unlock');
+
     // Color picker
     let selectedColor = d.color ?? CONN_COLORS[0];
     const colorWrap = el('div', 'color-swatch-row');
@@ -325,6 +333,7 @@ export class Settings {
       field('Password',  pwWrap),
       field('Color',     colorWrap),
       field('Access',    accessSel),
+      field('',          bioLabel),
       field('',          sshToggleLabel),
       sshFields,
     );
@@ -379,6 +388,7 @@ export class Settings {
         color:    selectedColor,
         readOnly:      accessSel.value === 'readonly',
         confirmWrites: accessSel.value === 'confirm',
+        requireBiometric: bioCheck.checked,
         ssh: sshCheck.checked ? {
           host:              sshHostEl.value.trim(),
           port:              parseInt(sshPortEl.value, 10) || 22,

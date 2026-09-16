@@ -1,10 +1,11 @@
 import { colorName } from './settings.js';
 
 export class ConnectionSelector {
-  constructor({ sectionEl, listEl, onSwitch, getColor }) {
+  constructor({ sectionEl, listEl, onSwitch, getColor, beforeSwitch }) {
     this.sectionEl = sectionEl;
     this.listEl = listEl;
     this.onSwitch = onSwitch;
+    this.beforeSwitch = beforeSwitch;   // async (name) → bool; si false, no cambia
     this.getColor  = getColor ?? (() => null);
     this.currentName = null;
     this.activeFilter = null;   // color actualmente filtrado, o null = todas
@@ -91,6 +92,7 @@ export class ConnectionSelector {
         if (conn.name === this.currentName) return;
         item.classList.add('switching');
         try {
+          if (this.beforeSwitch && !(await this.beforeSwitch(conn.name))) return;   // p.ej. Touch ID
           await this._bridge.useConnection(conn.name);
           this.currentName = conn.name;
           this.listEl.querySelectorAll('.conn-item').forEach((el) => el.classList.remove('active'));
