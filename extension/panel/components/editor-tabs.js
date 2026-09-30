@@ -50,6 +50,7 @@ export class EditorTabs {
     this._activeId = 1;
     this._seq = 1;
     this._editor.value = '';
+    this._editor.dispatchEvent(new Event('rehighlight'));
     this._render();
     this._editor.focus();
   }
@@ -82,6 +83,7 @@ export class EditorTabs {
     this.syncFromEditor();
     this._activeId = id;
     this._editor.value = this.activeTab?.sql ?? '';
+    this._editor.dispatchEvent(new Event('rehighlight'));
     this._editor.focus();
     this._render();
   }
@@ -95,6 +97,7 @@ export class EditorTabs {
       const next = this._tabs[Math.max(0, idx - 1)];
       this._activeId = next.id;
       this._editor.value = next.sql;
+      this._editor.dispatchEvent(new Event('rehighlight'));
     }
     this._render();
   }

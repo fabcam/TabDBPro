@@ -1,5 +1,25 @@
 import { spawn } from 'child_process';
+import { existsSync } from 'fs';
 import { getDumpConnectionParams } from './pool.js';
+
+// Como servicio (launchd) el PATH es mínimo y no incluye mysqldump/pg_dump.
+// Buscamos el binario en ubicaciones comunes y ampliamos el PATH del proceso hijo.
+const EXTRA_DIRS = [
+  '/usr/local/mysql/bin',
+  '/opt/homebrew/bin', '/usr/local/bin',
+  '/opt/homebrew/opt/mysql-client/bin', '/usr/local/opt/mysql-client/bin',
+  '/opt/homebrew/opt/libpq/bin', '/usr/local/opt/libpq/bin',
+  '/Applications/Postgres.app/Contents/Versions/latest/bin',
+  '/Applications/MAMP/Library/bin',
+];
+
+function resolveCmd(cmd) {
+  for (const dir of EXTRA_DIRS) {
+    const p = `${dir}/${cmd}`;
+    if (existsSync(p)) return p;
+  }
+  return cmd;   // si no, que lo resuelva el PATH (o falle con ENOENT)
+}
 
 export async function dumpDatabase(dbName) {
   const params = getDumpConnectionParams();
@@ -28,9 +48,10 @@ export async function dumpDatabase(dbName) {
 
 function runDump(cmd, args, extraEnv) {
   return new Promise((resolve, reject) => {
-    const proc = spawn(cmd, args, {
+    const augmentedPath = [...EXTRA_DIRS, process.env.PATH || ''].join(':');
+    const proc = spawn(resolveCmd(cmd), args, {
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, ...extraEnv },
+      env: { ...process.env, PATH: augmentedPath, ...extraEnv },
     });
 
     const chunks = [];

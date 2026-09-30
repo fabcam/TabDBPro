@@ -14,6 +14,8 @@ import { ERDiagram }        from './components/erd.js';
 import { EXPORT_META, guessTableName } from './components/export-results.js';
 import { buildPivot, guessValueField } from './components/pivot.js';
 import { requestUnlock } from './components/biometric.js';
+import { createHighlighter } from './components/editor-highlight.js';
+import { UndoHistory } from './components/undo-history.js';
 
 const BRIDGE_URL = 'http://127.0.0.1:47321';
 const bridge = new BridgeClient(BRIDGE_URL);
@@ -137,6 +139,12 @@ const editorTabs = new EditorTabs({
   editor,
 });
 
+// ── Syntax highlighting (overlay detrás del textarea) ── (tras EditorTabs, que fija el valor inicial)
+const highlighter = createHighlighter(editor);
+
+// ── Undo/redo propio (Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z / Ctrl+Y) ──
+const undoHistory = new UndoHistory(editor);
+
 // ── Results table ──
 const resultsTable = new ResultsTable(
   document.getElementById('results-head'),
@@ -146,7 +154,7 @@ const resultsTable = new ResultsTable(
 // ── Query history ──
 const history = new QueryHistory(
   document.getElementById('history-list'),
-  (sql) => { editor.value = sql; editorTabs.syncFromEditor(); editor.focus(); }
+  (sql) => { editor.value = sql; editor.dispatchEvent(new Event('input', { bubbles: true })); editorTabs.syncFromEditor(); editor.focus(); }
 );
 
 // ── Saved queries ──
@@ -1125,9 +1133,10 @@ editor.addEventListener('keydown', (e) => {
   }
   if (e.key === 'Tab') {
     e.preventDefault();
-    const start = editor.selectionStart;
-    editor.value = editor.value.slice(0, start) + '  ' + editor.value.slice(editor.selectionEnd);
+    const start = editor.selectionStart, end = editor.selectionEnd;
+    editor.value = editor.value.slice(0, start) + '  ' + editor.value.slice(end);
     editor.selectionStart = editor.selectionEnd = start + 2;
+    editor.dispatchEvent(new Event('input', { bubbles: true }));
   }
 });
 
@@ -1202,6 +1211,10 @@ const autocomplete = new SqlAutocomplete({
   getTableColumns: async (name) => {
     const { columns } = await bridge.tableSchema(name);
     return columns.map(c => c.column_name);
+  },
+  getRelationships: async () => {
+    const g = await bridge.schemaGraph();
+    return g.relationships ?? [];
   },
 });
 

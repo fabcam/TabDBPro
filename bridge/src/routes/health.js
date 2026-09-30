@@ -12,7 +12,7 @@ export async function healthRoutes(fastify) {
         database: null,
         multipleConnections: false,
         readOnly: true,
-        version: '0.3.0',
+        version: '0.4.0',
       };
     }
 
@@ -37,7 +37,7 @@ export async function healthRoutes(fastify) {
       database: getCurrentDatabase(),
       multipleConnections: config.connections.length > 1,
       readOnly: getCurrentReadOnly(),
-      version: '0.3.0',
+      version: '0.4.0',
     });
   });
 }

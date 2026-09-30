@@ -76,6 +76,8 @@ cat > "$PLIST" <<PLIST_EOF
     <dict>
         <key>BRIDGE_PORT</key>
         <string>$PORT</string>
+        <key>PATH</key>
+        <string>/usr/local/mysql/bin:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/libpq/bin:/usr/local/opt/libpq/bin:/opt/homebrew/opt/mysql-client/bin:/usr/local/opt/mysql-client/bin:/Applications/Postgres.app/Contents/Versions/latest/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
     <key>WorkingDirectory</key>
     <string>$INSTALL_DIR</string>

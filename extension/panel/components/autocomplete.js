@@ -17,11 +17,13 @@ const TABLE_TRIGGERS = ['FROM', 'JOIN', 'INNER JOIN', 'LEFT JOIN', 'RIGHT JOIN',
 const COL_TRIGGERS   = ['SELECT', 'WHERE', 'ON', 'ORDER BY', 'GROUP BY', 'HAVING', 'SET', 'DISTINCT'];
 
 export class SqlAutocomplete {
-  constructor({ editorEl, getTableNames, getTableColumns }) {
+  constructor({ editorEl, getTableNames, getTableColumns, getRelationships }) {
     this._editor      = editorEl;
     this._getNames    = getTableNames;
     this._getCols     = getTableColumns; // async (tableName) => string[]
+    this._getRels     = getRelationships; // async () => [{sourceTable,sourceColumn,targetTable,targetColumn}]
     this._colCache    = new Map();
+    this._relCache    = null;
     this._popup       = null;
     this._items       = [];
     this._selIdx      = 0;
@@ -45,9 +47,12 @@ export class SqlAutocomplete {
 
   // ── Input handling ──────────────────────────────────────────────────────────
 
-  async _onInput() {
+  async _onInput(force = false) {
     const { word, partial, context, extra } = this._context();
-    if (!partial || partial.length < 1) { this._hide(); return; }
+    // col_specific (después de "tabla.") sugiere aunque no hayas tipeado nada;
+    // el resto pide ≥1 carácter, salvo que se fuerce con Ctrl/Cmd+Espacio.
+    const needsChar = !['col_specific', 'command', 'join'].includes(context);
+    if (!force && needsChar && (!partial || partial.length < 1)) { this._hide(); return; }
     const items = await this._suggest(partial, context, extra);
     if (!items.length) { this._hide(); return; }
     this._currentWord = context === 'col_specific' ? partial : word;
@@ -55,6 +60,13 @@ export class SqlAutocomplete {
   }
 
   _onKeydown(e) {
+    // Ctrl/Cmd+Shift+Espacio fuerza el autocompletado según la posición del cursor
+    // (tablas después de FROM/JOIN, columnas después de SELECT/WHERE/…, etc.).
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === 'Space') {
+      e.preventDefault(); e.stopImmediatePropagation();
+      this._onInput(true);
+      return;
+    }
     if (!this._popup) return;
     switch (e.key) {
       case 'ArrowDown': e.preventDefault(); this._move(1);  break;
@@ -94,6 +106,17 @@ export class SqlAutocomplete {
       const aliases   = this._extractAliases(stmt);
       const tableName = aliases.get(prefix) ?? aliases.get(prefix.toLowerCase()) ?? prefix;
       return { word, partial, context: 'col_specific', extra: { tableName, prefix } };
+    }
+
+    // Comandos con prefijo "/": /lj → LEFT JOIN, /rj → RIGHT JOIN (solo tablas con FK
+    // a alguna tabla ya presente en el statement, incluidas las joineadas antes).
+    const cmdM = before.match(/(?:^|[\s(,])\/([a-zA-Z]*)$/);
+    if (cmdM) {
+      const cmd  = cmdM[1].toLowerCase();
+      const full = '/' + cmdM[1];
+      if (cmd === 'lj' || cmd === 'rj')
+        return { word: full, partial: full, context: 'join', extra: { join: cmd === 'lj' ? 'LEFT' : 'RIGHT', stmt } };
+      return { word: full, partial: cmd, context: 'command', extra: {} };   // menú de comandos
     }
 
     const upper = stmt.toUpperCase();
@@ -153,16 +176,49 @@ export class SqlAutocomplete {
 
   async _suggest(partial, context, extra) {
     const lp = partial.toLowerCase();
-    const match = (list, limit = 25) =>
-      list
-        .filter(s => s.toLowerCase().startsWith(lp) && s.toLowerCase() !== lp)
-        .slice(0, limit);
+    // Primero los que empiezan con lo tipeado, luego los que lo contienen (mejor recall).
+    const match = (list, limit = 25) => {
+      const pref = [], sub = [];
+      for (const s of list) {
+        const ls = s.toLowerCase();
+        if (ls === lp) continue;
+        if (ls.startsWith(lp)) pref.push(s);
+        else if (lp && ls.includes(lp)) sub.push(s);
+      }
+      return [...pref, ...sub].slice(0, limit);
+    };
 
     if (context === 'keyword')
       return match(KEYWORDS).map(s => ({ label: s, insert: s, kind: 'keyword' }));
 
     if (context === 'table')
       return match(this._getNames(), 200).map(s => ({ label: s, insert: s, kind: 'table' }));
+
+    if (context === 'command') {
+      const cmds = [
+        { name: 'lj', desc: 'LEFT JOIN por FK' },
+        { name: 'rj', desc: 'RIGHT JOIN por FK' },
+      ];
+      return cmds
+        .filter(c => c.name.startsWith(lp))
+        .map(c => ({ label: '/' + c.name, insert: '/' + c.name, kind: 'command', detail: c.desc }));
+    }
+
+    if (context === 'join') {
+      const { join, stmt } = extra;
+      const rels   = await this._fetchRels();
+      const inStmt = new Set(this._tablesInStmt(stmt).map(t => t.toLowerCase()));
+      const kw = join === 'RIGHT' ? 'RIGHT JOIN' : 'LEFT JOIN';
+      // Solo tablas con FK hacia alguna tabla del statement (deduplicadas).
+      const joinable = new Map();   // lower → nombre real
+      for (const r of rels) {
+        const sIn = inStmt.has(r.sourceTable.toLowerCase());
+        const tIn = inStmt.has(r.targetTable.toLowerCase());
+        if (sIn && !tIn)      joinable.set(r.targetTable.toLowerCase(), r.targetTable);
+        else if (tIn && !sIn) joinable.set(r.sourceTable.toLowerCase(), r.sourceTable);
+      }
+      return [...joinable.values()].map(t => ({ label: t, insert: `${kw} ${t}`, kind: 'join' }));
+    }
 
     if (context === 'col_specific') {
       const { tableName, prefix } = extra;
@@ -175,9 +231,9 @@ export class SqlAutocomplete {
       const { tables } = extra;
       const colArrays = await Promise.all(tables.map(t => this._fetchCols(t)));
       const cols      = [...new Set(colArrays.flat())];
-      const tableHits = match(this._getNames(), 10).map(s => ({ label: s, insert: s, kind: 'table' }));
       const colHits   = match(cols, 20).map(s => ({ label: s, insert: s, kind: 'column' }));
-      return [...tableHits, ...colHits];
+      const tableHits = match(this._getNames(), 10).map(s => ({ label: s, insert: s, kind: 'table' }));
+      return [...colHits, ...tableHits];   // en posición de columna, columnas primero
     }
 
     return [];
@@ -192,7 +248,14 @@ export class SqlAutocomplete {
     } catch { return []; }
   }
 
-  invalidateCache() { this._colCache.clear(); }
+  async _fetchRels() {
+    if (this._relCache) return this._relCache;
+    try { this._relCache = (await this._getRels?.()) ?? []; }
+    catch { this._relCache = []; }
+    return this._relCache;
+  }
+
+  invalidateCache() { this._colCache.clear(); this._relCache = null; }
 
   // ── Popup rendering ──────────────────────────────────────────────────────────
 
@@ -211,7 +274,7 @@ export class SqlAutocomplete {
 
       const badge = document.createElement('span');
       badge.className = `ac-badge ac-badge-${item.kind}`;
-      badge.textContent = item.kind === 'keyword' ? 'KW' : item.kind === 'table' ? 'TBL' : 'COL';
+      badge.textContent = { keyword: 'KW', table: 'TBL', column: 'COL', join: 'JOIN', command: 'CMD' }[item.kind] ?? 'COL';
 
       const label = document.createElement('span');
       label.className = 'ac-label';
@@ -266,12 +329,11 @@ export class SqlAutocomplete {
     const before  = ta.value.slice(0, pos);
     const after   = ta.value.slice(pos);
     const wordLen = this._currentWord.length;
-    const insert  = item.insert;
 
-    ta.value = before.slice(0, pos - wordLen) + insert + after;
-    const newPos = pos - wordLen + insert.length;
+    ta.value = before.slice(0, pos - wordLen) + item.insert + after;
+    const newPos = pos - wordLen + item.insert.length;
     ta.selectionStart = ta.selectionEnd = newPos;
-    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    ta.dispatchEvent(new Event('input', { bubbles: true }));   // resaltado + persistencia + undo + re-sugerencias
     ta.focus();
     this._hide();
   }
