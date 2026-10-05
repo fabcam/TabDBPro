@@ -1220,7 +1220,12 @@ const autocomplete = new SqlAutocomplete({
 
 // Invalidate column cache when schema reloads or connection changes
 const _origSchemaLoad = schema.load.bind(schema);
-schema.load = async (...args) => { autocomplete.invalidateCache(); return _origSchemaLoad(...args); };
+schema.load = async (...args) => {
+  autocomplete.invalidateCache();
+  const r = await _origSchemaLoad(...args);
+  autocomplete.warm();   // pre-carga FKs para /lj instantáneo
+  return r;
+};
 
 // ── Init ──
 showState('empty');

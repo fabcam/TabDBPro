@@ -53,7 +53,10 @@ export class SqlAutocomplete {
     // el resto pide ≥1 carácter, salvo que se fuerce con Ctrl/Cmd+Espacio.
     const needsChar = !['col_specific', 'command', 'join'].includes(context);
     if (!force && needsChar && (!partial || partial.length < 1)) { this._hide(); return; }
+    // Snapshot para abortar si el editor cambió durante el await (evita popups desfasados).
+    const snapVal = this._editor.value, snapPos = this._editor.selectionStart;
     const items = await this._suggest(partial, context, extra);
+    if (this._editor.value !== snapVal || this._editor.selectionStart !== snapPos) return;
     if (!items.length) { this._hide(); return; }
     this._currentWord = context === 'col_specific' ? partial : word;
     this._show(items);
@@ -110,7 +113,7 @@ export class SqlAutocomplete {
 
     // Comandos con prefijo "/": /lj → LEFT JOIN, /rj → RIGHT JOIN (solo tablas con FK
     // a alguna tabla ya presente en el statement, incluidas las joineadas antes).
-    const cmdM = before.match(/(?:^|[\s(,])\/([a-zA-Z]*)$/);
+    const cmdM = before.match(/\/([a-zA-Z]*)$/);
     if (cmdM) {
       const cmd  = cmdM[1].toLowerCase();
       const full = '/' + cmdM[1];
@@ -191,8 +194,11 @@ export class SqlAutocomplete {
     if (context === 'keyword')
       return match(KEYWORDS).map(s => ({ label: s, insert: s, kind: 'keyword' }));
 
-    if (context === 'table')
-      return match(this._getNames(), 200).map(s => ({ label: s, insert: s, kind: 'table' }));
+    if (context === 'table') {
+      const tableHits = match(this._getNames(), 200).map(s => ({ label: s, insert: s, kind: 'table' }));
+      const kwHits    = match(KEYWORDS).map(s => ({ label: s, insert: s, kind: 'keyword' }));
+      return [...tableHits, ...kwHits];   // tablas primero, pero también keywords (WHERE, JOIN, …)
+    }
 
     if (context === 'command') {
       const cmds = [
@@ -206,18 +212,36 @@ export class SqlAutocomplete {
 
     if (context === 'join') {
       const { join, stmt } = extra;
-      const rels   = await this._fetchRels();
-      const inStmt = new Set(this._tablesInStmt(stmt).map(t => t.toLowerCase()));
+      const rels    = await this._fetchRels();
+      const tables  = this._tablesInStmt(stmt);
+      const aliases = this._extractAliases(stmt);
+      const inStmt  = new Set(tables.map(t => t.toLowerCase()));
+      const refOf = (table) => {
+        for (const [al, tb] of aliases) if (tb.toLowerCase() === table.toLowerCase()) return al;
+        return table;   // sin alias → el nombre de la tabla
+      };
       const kw = join === 'RIGHT' ? 'RIGHT JOIN' : 'LEFT JOIN';
-      // Solo tablas con FK hacia alguna tabla del statement (deduplicadas).
-      const joinable = new Map();   // lower → nombre real
+      // Solo tablas con FK hacia alguna tabla del statement (incluidas las joineadas antes).
+      const items = [], seen = new Set();
       for (const r of rels) {
         const sIn = inStmt.has(r.sourceTable.toLowerCase());
         const tIn = inStmt.has(r.targetTable.toLowerCase());
-        if (sIn && !tIn)      joinable.set(r.targetTable.toLowerCase(), r.targetTable);
-        else if (tIn && !sIn) joinable.set(r.sourceTable.toLowerCase(), r.sourceTable);
+        let joinTable, cond;
+        if (sIn && !tIn) {
+          joinTable = r.targetTable;
+          cond = `${refOf(r.sourceTable)}.${r.sourceColumn} = ${r.targetTable}.${r.targetColumn}`;
+        } else if (tIn && !sIn) {
+          joinTable = r.sourceTable;
+          cond = `${refOf(r.targetTable)}.${r.targetColumn} = ${r.sourceTable}.${r.sourceColumn}`;
+        } else {
+          continue;
+        }
+        const insert = `${kw} ${joinTable} ON ${cond}`;
+        if (seen.has(insert)) continue;
+        seen.add(insert);
+        items.push({ label: joinTable, insert, kind: 'join', detail: `ON ${cond}` });
       }
-      return [...joinable.values()].map(t => ({ label: t, insert: `${kw} ${t}`, kind: 'join' }));
+      return items;
     }
 
     if (context === 'col_specific') {
@@ -233,7 +257,8 @@ export class SqlAutocomplete {
       const cols      = [...new Set(colArrays.flat())];
       const colHits   = match(cols, 20).map(s => ({ label: s, insert: s, kind: 'column' }));
       const tableHits = match(this._getNames(), 10).map(s => ({ label: s, insert: s, kind: 'table' }));
-      return [...colHits, ...tableHits];   // en posición de columna, columnas primero
+      const kwHits    = match(KEYWORDS).map(s => ({ label: s, insert: s, kind: 'keyword' }));
+      return [...colHits, ...tableHits, ...kwHits];   // columnas primero, luego tablas y keywords (FROM, WHERE, …)
     }
 
     return [];
@@ -256,6 +281,9 @@ export class SqlAutocomplete {
   }
 
   invalidateCache() { this._colCache.clear(); this._relCache = null; }
+
+  // Pre-carga las relaciones (FKs) para que /lj muestre tablas al instante.
+  warm() { this._fetchRels().catch(() => {}); }
 
   // ── Popup rendering ──────────────────────────────────────────────────────────
 
