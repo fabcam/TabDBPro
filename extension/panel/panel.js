@@ -751,6 +751,28 @@ function detectSourceTable(sql) {
   return m ? m[1] : null;
 }
 
+// Todas las tablas del query (FROM + JOINs) — para FK-nav en resultados de join.
+function detectAllTables(sql) {
+  const clean = sql.replace(/;?\s*$/, '');
+  const tables = [];
+  const re = /(?:FROM|JOIN)\s+[`"']?(\w+)[`"']?/gi;
+  let m;
+  while ((m = re.exec(clean)) !== null) tables.push(m[1]);
+  return [...new Set(tables)];
+}
+
+// Une los fkMap de varias tablas (primera tabla gana ante columnas homónimas).
+async function buildFkMap(tables) {
+  const fkMap = new Map();
+  for (const t of tables) {
+    try {
+      const meta = await getTableMeta(t);
+      for (const [col, ref] of meta.fkMap) if (!fkMap.has(col)) fkMap.set(col, ref);
+    } catch { /* ignorar tabla que falle */ }
+  }
+  return fkMap;
+}
+
 function quoteId(name) {
   return dbType === 'postgres' ? `"${name}"` : `\`${name}\``;
 }
@@ -1027,6 +1049,9 @@ async function renderResults(result, sql, keepFkTabs = false) {
     let fkMap = new Map();
     if (sourceTable) {
       try { ({ fkMap } = await getTableMeta(sourceTable)); } catch {}
+    } else {
+      // Join (u otros): FK-nav usando los FKs de todas las tablas del query.
+      try { fkMap = await buildFkMap(detectAllTables(sql)); } catch {}
     }
     const metaText = `${result.rowCount} row${result.rowCount !== 1 ? 's' : ''} · ${result.durationMs}ms`;
     _setMainTab(result.fields, result.rows, false, null, fkMap, metaText, keepFkTabs);
