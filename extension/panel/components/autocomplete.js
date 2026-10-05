@@ -222,7 +222,8 @@ export class SqlAutocomplete {
       };
       const kw = join === 'RIGHT' ? 'RIGHT JOIN' : 'LEFT JOIN';
       // Solo tablas con FK hacia alguna tabla del statement (incluidas las joineadas antes).
-      const items = [], seen = new Set();
+      // Una entrada por tabla (dedup); la lista muestra SOLO la tabla, pero inserta el ON.
+      const byTable = new Map();   // lower → { label, insert }
       for (const r of rels) {
         const sIn = inStmt.has(r.sourceTable.toLowerCase());
         const tIn = inStmt.has(r.targetTable.toLowerCase());
@@ -236,12 +237,11 @@ export class SqlAutocomplete {
         } else {
           continue;
         }
-        const insert = `${kw} ${joinTable} ON ${cond}`;
-        if (seen.has(insert)) continue;
-        seen.add(insert);
-        items.push({ label: joinTable, insert, kind: 'join', detail: `ON ${cond}` });
+        const key = joinTable.toLowerCase();
+        if (byTable.has(key)) continue;   // primera FK por tabla
+        byTable.set(key, { label: joinTable, insert: `${kw} ${joinTable} ON ${cond}`, kind: 'join' });
       }
-      return items;
+      return [...byTable.values()];
     }
 
     if (context === 'col_specific') {
