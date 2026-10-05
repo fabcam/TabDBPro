@@ -278,10 +278,12 @@ export class SqlAutocomplete {
   }
 
   async _fetchRels() {
-    if (this._relCache) return this._relCache;
-    try { this._relCache = (await this._getRels?.()) ?? []; }
-    catch { this._relCache = []; }
-    return this._relCache;
+    if (this._relCache && this._relCache.length) return this._relCache;
+    try {
+      const r = (await this._getRels?.()) ?? [];
+      if (r.length) this._relCache = r;   // no cachear vacío → reintenta la próxima
+      return r;
+    } catch { return []; }
   }
 
   invalidateCache() { this._colCache.clear(); this._relCache = null; }
