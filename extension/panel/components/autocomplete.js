@@ -181,14 +181,14 @@ export class SqlAutocomplete {
     const lp = partial.toLowerCase();
     // Primero los que empiezan con lo tipeado, luego los que lo contienen (mejor recall).
     const match = (list, limit = 25) => {
-      const pref = [], sub = [];
+      const exact = [], pref = [], sub = [];
       for (const s of list) {
         const ls = s.toLowerCase();
-        if (ls === lp) continue;
-        if (ls.startsWith(lp)) pref.push(s);
+        if (ls === lp) exact.push(s);              // coincidencia exacta: se mantiene y va primera
+        else if (ls.startsWith(lp)) pref.push(s);
         else if (lp && ls.includes(lp)) sub.push(s);
       }
-      return [...pref, ...sub].slice(0, limit);
+      return [...exact, ...pref, ...sub].slice(0, limit);
     };
 
     if (context === 'keyword')
