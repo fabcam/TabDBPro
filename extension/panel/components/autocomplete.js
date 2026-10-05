@@ -28,6 +28,7 @@ export class SqlAutocomplete {
     this._items       = [];
     this._selIdx      = 0;
     this._currentWord = '';
+    this._reqId       = 0;
 
     editorEl.addEventListener('input',   ()  => this._onInput());
     // Capture phase so this fires before panel.js Tab handler
@@ -53,11 +54,14 @@ export class SqlAutocomplete {
     // el resto pide ≥1 carácter, salvo que se fuerce con Ctrl/Cmd+Espacio.
     const needsChar = !['col_specific', 'command', 'join'].includes(context);
     if (!force && needsChar && (!partial || partial.length < 1)) { this._hide(); return; }
-    // Snapshot para abortar si el editor cambió durante el await (evita popups desfasados).
-    const snapVal = this._editor.value, snapPos = this._editor.selectionStart;
-    const items = await this._suggest(partial, context, extra);
-    if (this._editor.value !== snapVal || this._editor.selectionStart !== snapPos) return;
-    if (!items.length) { this._hide(); return; }
+    // Solo mostramos el resultado de la última petición (evita popups desfasados sin
+    // abortar de más: si no llegó otra petición después, se muestra igual).
+    const reqId = ++this._reqId;
+    let items;
+    try { items = await this._suggest(partial, context, extra); }
+    catch { return; }
+    if (reqId !== this._reqId) return;
+    if (!items || !items.length) { this._hide(); return; }
     this._currentWord = context === 'col_specific' ? partial : word;
     this._show(items);
   }
