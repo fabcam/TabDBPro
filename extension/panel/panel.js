@@ -137,7 +137,12 @@ saveQueryName.addEventListener('keydown', (e) => {
 const editorTabs = new EditorTabs({
   containerEl: document.getElementById('editor-tabs'),
   editor,
+  onTabSwitch: (tab) => onEditorTabSwitch(tab),   // cada pestaña tiene su propio resultado
 });
+
+// Resultado por pestaña de query: se guarda/restaura al cambiar de pestaña.
+const resultsByTab = new Map();   // editorTabId → { tabStore:[...], activeTabId, tabIdSeq }
+let activeEditorTabId = editorTabs.activeTab?.id ?? null;
 
 // ── Syntax highlighting (overlay detrás del textarea) ── (tras EditorTabs, que fija el valor inicial)
 const highlighter = createHighlighter(editor);
@@ -274,6 +279,34 @@ async function getTableMeta(tableName) {
 const tabStore = [];
 let activeTabId = null;
 let tabIdSeq = 0;
+
+// ── Resultado por pestaña de query ──
+function _saveResultsFor(id) {
+  if (id == null) return;
+  resultsByTab.set(id, { tabStore: [...tabStore], activeTabId, tabIdSeq });
+}
+function _restoreResultsFor(id) {
+  _pivotOff();
+  const saved = resultsByTab.get(id);
+  tabStore.length = 0;
+  if (saved && saved.tabStore.length) {
+    tabStore.push(...saved.tabStore);
+    activeTabId = saved.activeTabId;
+    tabIdSeq = Math.max(tabIdSeq, saved.tabIdSeq);
+    _refreshTabBar();
+    _renderActiveTab();
+  } else {
+    activeTabId = null;
+    _refreshTabBar();
+    showState('empty');
+    resultsMeta.classList.add('hidden');
+  }
+}
+function onEditorTabSwitch(newTab) {
+  _saveResultsFor(activeEditorTabId);
+  activeEditorTabId = newTab?.id ?? null;
+  _restoreResultsFor(activeEditorTabId);
+}
 
 function _setMainTab(fields, rows, editable, callbacks, fkMap, metaText, keepFkTabs = false) {
   const fkTabs = keepFkTabs ? tabStore.filter(t => t.id !== 0) : [];

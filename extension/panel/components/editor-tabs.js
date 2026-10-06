@@ -1,9 +1,10 @@
 const STORE_KEY = 'tabdb_editor_tabs';
 
 export class EditorTabs {
-  constructor({ containerEl, editor }) {
+  constructor({ containerEl, editor, onTabSwitch }) {
     this._container = containerEl;
     this._editor = editor;
+    this._onTabSwitch = onTabSwitch;   // (nuevaTabActiva) → void, en cambios de pestaña
 
     const restored = this._restore();
     if (restored) {
@@ -53,6 +54,7 @@ export class EditorTabs {
     this._editor.dispatchEvent(new Event('rehighlight'));
     this._render();
     this._editor.focus();
+    this._onTabSwitch?.(this.activeTab);
   }
 
   updateActiveTab(label, savedId) {
@@ -86,6 +88,7 @@ export class EditorTabs {
     this._editor.dispatchEvent(new Event('rehighlight'));
     this._editor.focus();
     this._render();
+    this._onTabSwitch?.(this.activeTab);
   }
 
   _close(id) {
@@ -93,13 +96,15 @@ export class EditorTabs {
     const idx = this._tabs.findIndex(t => t.id === id);
     if (idx < 0) return;
     this._tabs.splice(idx, 1);
-    if (this._activeId === id) {
+    const wasActive = this._activeId === id;
+    if (wasActive) {
       const next = this._tabs[Math.max(0, idx - 1)];
       this._activeId = next.id;
       this._editor.value = next.sql;
       this._editor.dispatchEvent(new Event('rehighlight'));
     }
     this._render();
+    if (wasActive) this._onTabSwitch?.(this.activeTab);
   }
 
   // ── Persistencia (localStorage, por perfil de navegador) ──
