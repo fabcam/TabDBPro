@@ -116,14 +116,17 @@ export class SqlAutocomplete {
     }
 
     // Comandos con prefijo "/": /lj → LEFT JOIN, /rj → RIGHT JOIN (solo tablas con FK
-    // a alguna tabla ya presente en el statement, incluidas las joineadas antes).
+    // a alguna tabla del statement). Se puede seguir tipeando para filtrar: "/lj us".
+    const joinM = before.match(/\/(lj|rj)(?:\s+(\w*))?$/i);
+    if (joinM) {
+      const filter = joinM[2] ?? '';
+      return { word: joinM[0], partial: filter, context: 'join',
+        extra: { join: joinM[1].toLowerCase() === 'lj' ? 'LEFT' : 'RIGHT', stmt, filter } };
+    }
+    // "/" o comando parcial → menú de comandos (lj, rj)
     const cmdM = before.match(/\/([a-zA-Z]*)$/);
     if (cmdM) {
-      const cmd  = cmdM[1].toLowerCase();
-      const full = '/' + cmdM[1];
-      if (cmd === 'lj' || cmd === 'rj')
-        return { word: full, partial: full, context: 'join', extra: { join: cmd === 'lj' ? 'LEFT' : 'RIGHT', stmt } };
-      return { word: full, partial: cmd, context: 'command', extra: {} };   // menú de comandos
+      return { word: '/' + cmdM[1], partial: cmdM[1].toLowerCase(), context: 'command', extra: {} };
     }
 
     const upper = stmt.toUpperCase();
@@ -215,7 +218,8 @@ export class SqlAutocomplete {
     }
 
     if (context === 'join') {
-      const { join, stmt } = extra;
+      const { join, stmt, filter } = extra;
+      const f       = (filter || '').toLowerCase();
       const rels    = await this._fetchRels();
       const tables  = this._tablesInStmt(stmt);
       const aliases = this._extractAliases(stmt);
@@ -243,9 +247,16 @@ export class SqlAutocomplete {
         }
         const key = joinTable.toLowerCase();
         if (byTable.has(key)) continue;   // primera FK por tabla
+        if (f && !key.includes(f)) continue;   // filtro por lo tipeado tras /lj
         byTable.set(key, { label: joinTable, insert: `${kw} ${joinTable} ON ${cond}`, kind: 'join' });
       }
-      return [...byTable.values()];
+      // los que empiezan con el filtro, primero
+      const list = [...byTable.values()];
+      if (f) list.sort((a, b) => {
+        const ap = a.label.toLowerCase().startsWith(f), bp = b.label.toLowerCase().startsWith(f);
+        return ap === bp ? 0 : ap ? -1 : 1;
+      });
+      return list;
     }
 
     if (context === 'col_specific') {
