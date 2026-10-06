@@ -138,6 +138,13 @@ const editorTabs = new EditorTabs({
   containerEl: document.getElementById('editor-tabs'),
   editor,
   onTabSwitch: (tab) => onEditorTabSwitch(tab),   // cada pestaña tiene su propio resultado
+  // Cabecera de la pestaña nueva: un comentario con conexión y db actuales.
+  newTabHeader: () => {
+    if (!currentConnection) return '';
+    return currentDatabase
+      ? `-- ${currentConnection} / ${currentDatabase}\n`
+      : `-- ${currentConnection}\n`;
+  },
 });
 
 // Resultado por pestaña de query: se guarda/restaura al cambiar de pestaña.

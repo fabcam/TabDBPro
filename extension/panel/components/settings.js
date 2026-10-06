@@ -185,12 +185,12 @@ export class Settings {
 
     const form = el('div', 'settings-form');
 
-    const nameEl   = input('text',     d.name,     'My Postgres');
+    const nameEl   = input('text',     d.name,     '');
     const typeEl   = this._typeSelect(d.type);
     const hostEl   = input('text',     d.host,     'localhost');
     const portEl   = input('number',   d.port,     '5432');
     const dbEl     = input('text',     d.database, 'mydb');
-    const userEl   = input('text',     d.user,     'postgres');
+    const userEl   = input('text',     d.user,     'root');
     const pwEl     = input('password', d.password, '');
 
     // Show/hide password
@@ -260,7 +260,7 @@ export class Settings {
     const sshFields = el('div', 'ssh-fields' + (d.ssh ? '' : ' hidden'));
     const sshHostEl = input('text',   d.ssh?.host           ?? '', 'bastion.example.com');
     const sshPortEl = input('number', d.ssh?.port           ?? 22, '22');
-    const sshUserEl = input('text',   d.ssh?.user           ?? '', 'deploy');
+    const sshUserEl = input('text',   d.ssh?.user           ?? '', 'ubuntu');
     const sshKeyEl  = input('text',   d.ssh?.privateKeyPath ?? '', '~/.ssh/id_ed25519');
     const sshPassEl = input('password', d.ssh?.passphrase   ?? '', 'passphrase (optional)');
 

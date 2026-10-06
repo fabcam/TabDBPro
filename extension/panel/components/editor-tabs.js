@@ -1,10 +1,11 @@
 const STORE_KEY = 'tabdb_editor_tabs';
 
 export class EditorTabs {
-  constructor({ containerEl, editor, onTabSwitch }) {
+  constructor({ containerEl, editor, onTabSwitch, newTabHeader }) {
     this._container = containerEl;
     this._editor = editor;
     this._onTabSwitch = onTabSwitch;   // (nuevaTabActiva) → void, en cambios de pestaña
+    this._newTabHeader = newTabHeader; // () → string, comentario inicial para tabs nuevas
 
     const restored = this._restore();
     if (restored) {
@@ -77,7 +78,13 @@ export class EditorTabs {
     this.syncFromEditor();
     this._seq++;
     const id = this._seq;
-    this._tabs.push({ id, label: label ?? `Query ${this._seq}`, sql, savedId });
+    // Sembrar el comentario de conexión/db, salvo al abrir una query guardada.
+    let content = sql;
+    if (!savedId) {
+      const header = this._newTabHeader?.() || '';
+      content = header + sql;
+    }
+    this._tabs.push({ id, label: label ?? `Query ${this._seq}`, sql: content, savedId });
     this._switchTo(id);
   }
 
@@ -87,6 +94,8 @@ export class EditorTabs {
     this._editor.value = this.activeTab?.sql ?? '';
     this._editor.dispatchEvent(new Event('rehighlight'));
     this._editor.focus();
+    const end = this._editor.value.length;
+    try { this._editor.setSelectionRange(end, end); } catch { /* no-op */ }
     this._render();
     this._onTabSwitch?.(this.activeTab);
   }
