@@ -41,6 +41,9 @@ export async function dumpDatabase(dbName) {
       '-P', String(params.port),
       '-u', params.user,
       '--no-tablespaces',
+      '--single-transaction',   // snapshot consistente sin LOCK TABLES (no se cuelga en DBs con tráfico)
+      '--quick',                // streamea filas en vez de bufferear toda la tabla en RAM
+      '--skip-lock-tables',     // explícito: nunca lockear (redundante con --single-transaction)
       database,
     ], { MYSQL_PWD: params.password ?? '' });
   }
