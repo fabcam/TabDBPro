@@ -27,6 +27,22 @@ export const CONN_COLOR_NAMES = {
 
 export const colorName = (hex) => CONN_COLOR_NAMES[hex] || hex;
 
+// Etiqueta accesible (para daltónicos): índice 1-based del color en la paleta.
+export const colorLabel = (hex) => {
+  const i = CONN_COLORS.indexOf(hex);
+  return i >= 0 ? String(i + 1) : '';
+};
+
+// Color de texto (negro o blanco) con buen contraste sobre el color de fondo dado.
+export const colorTextColor = (hex) => {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex || '');
+  if (!m) return '#fff';
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return lum > 0.6 ? '#000' : '#fff';
+};
+
 export class Settings {
   constructor({ modalEl, bodyEl, onApply, onTestSsh, onTestDb }) {
     this._modal = modalEl;
@@ -243,6 +259,8 @@ export class Settings {
         const sw = el('button', 'color-swatch' + (c === selectedColor ? ' selected' : ''));
         sw.type = 'button';
         sw.style.background = c;
+        sw.style.color = colorTextColor(c);
+        sw.textContent = colorLabel(c);
         sw.title = colorName(c);
         sw.addEventListener('click', () => { selectedColor = c; renderSwatches(); });
         colorWrap.appendChild(sw);
