@@ -1,4 +1,4 @@
-import { colorName, colorLabel, colorTextColor } from './settings.js';
+import { colorName, colorIconSvg, colorTextColor } from './settings.js';
 
 export class ConnectionSelector {
   constructor({ sectionEl, listEl, onSwitch, getColor, beforeSwitch, onSwitchStart }) {
@@ -58,7 +58,7 @@ export class ConnectionSelector {
       sw.className = 'conn-swatch' + (this.activeFilter === color ? ' active' : '');
       sw.style.background = color;
       sw.style.color = colorTextColor(color);
-      sw.textContent = colorLabel(color);
+      sw.innerHTML = colorIconSvg(color);
       sw.title = colorName(color);
       sw.addEventListener('click', () => {
         this.activeFilter = this.activeFilter === color ? null : color;  // toggle

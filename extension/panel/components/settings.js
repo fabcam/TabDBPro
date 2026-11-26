@@ -27,10 +27,22 @@ export const CONN_COLOR_NAMES = {
 
 export const colorName = (hex) => CONN_COLOR_NAMES[hex] || hex;
 
-// Etiqueta accesible (para daltónicos): índice 1-based del color en la paleta.
-export const colorLabel = (hex) => {
+// Ícono accesible (para daltónicos): una forma distinta por color de la paleta.
+// SVG inline (no Unicode) para evitar glifos "tofu" que no rendericen.
+const COLOR_ICONS = [
+  '<circle cx="12" cy="12" r="8"/>',                                   // 1 blue   — círculo
+  '<rect x="5" y="5" width="14" height="14" rx="2"/>',                 // 2 green  — cuadrado
+  '<polygon points="12,4 20,19 4,19"/>',                              // 3 purple — triángulo
+  '<polygon points="12,3 21,12 12,21 3,12"/>',                       // 4 orange — rombo
+  '<polygon points="12,2 14.3,8.8 21.5,8.9 15.8,13.2 17.9,20.1 12,16 6.1,20.1 8.2,13.2 2.5,8.9 9.7,8.8"/>', // 5 yellow — estrella
+  '<path d="M9.5 3h5v6h6v5h-6v6h-5v-6h-6v-5h6z"/>',                   // 6 teal   — cruz
+  '<path d="M12 20.5C4 14 5.5 5.5 12 8.2 18.5 5.5 20 14 12 20.5Z"/>', // 7 red    — corazón
+  '<polygon points="12,3 20,7.5 20,16.5 12,21 4,16.5 4,7.5"/>',       // 8 pink   — hexágono
+];
+export const colorIconSvg = (hex) => {
   const i = CONN_COLORS.indexOf(hex);
-  return i >= 0 ? String(i + 1) : '';
+  const shape = i >= 0 ? COLOR_ICONS[i] : '<circle cx="12" cy="12" r="7"/>';
+  return `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${shape}</svg>`;
 };
 
 // Color de texto (negro o blanco) con buen contraste sobre el color de fondo dado.
@@ -260,7 +272,7 @@ export class Settings {
         sw.type = 'button';
         sw.style.background = c;
         sw.style.color = colorTextColor(c);
-        sw.textContent = colorLabel(c);
+        sw.innerHTML = colorIconSvg(c);
         sw.title = colorName(c);
         sw.addEventListener('click', () => { selectedColor = c; renderSwatches(); });
         colorWrap.appendChild(sw);
