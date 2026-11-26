@@ -35,7 +35,7 @@ const COLOR_ICONS = [
   '<polygon points="12,4 20,19 4,19"/>',                              // 3 purple — triángulo
   '<polygon points="12,3 21,12 12,21 3,12"/>',                       // 4 orange — rombo
   '<polygon points="12,2 14.3,8.8 21.5,8.9 15.8,13.2 17.9,20.1 12,16 6.1,20.1 8.2,13.2 2.5,8.9 9.7,8.8"/>', // 5 yellow — estrella
-  '<path d="M9.5 3h5v6h6v5h-6v6h-5v-6h-6v-5h6z"/>',                   // 6 teal   — cruz
+  '<path d="M12 3C12 3 5 11 5 15a7 7 0 0 0 14 0C19 11 12 3 12 3Z"/>', // 6 teal   — gota
   '<path d="M12 20.5C4 14 5.5 5.5 12 8.2 18.5 5.5 20 14 12 20.5Z"/>', // 7 red    — corazón
   '<polygon points="12,3 20,7.5 20,16.5 12,21 4,16.5 4,7.5"/>',       // 8 pink   — hexágono
 ];
