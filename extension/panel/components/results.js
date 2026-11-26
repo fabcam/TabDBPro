@@ -66,6 +66,9 @@ export class ResultsTable {
   _buildHead(fields, editable) {
     this.head.innerHTML = '';
     const tr = document.createElement('tr');
+    const exTh = document.createElement('th');
+    exTh.className = 'th-expand';
+    tr.appendChild(exTh);
     fields.forEach((f, i) => {
       const th = document.createElement('th');
       th.title = `type id: ${f.dataTypeID}`;
@@ -104,6 +107,21 @@ export class ResultsTable {
       const prev = ri > 0 ? rows[ri - 1] : null;
       const snapshot = [...row];
       const tr = document.createElement('tr');
+
+      // Columna de expandir: muestra el registro como key-value debajo.
+      const exTd = document.createElement('td');
+      exTd.className = 'td-expand';
+      const exBtn = document.createElement('button');
+      exBtn.className = 'row-expand-btn';
+      exBtn.textContent = '▶';
+      exBtn.title = 'Ver registro';
+      exBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._toggleRowDetail(tr, exBtn, fields, snapshot, editable);
+      });
+      exTd.appendChild(exBtn);
+      tr.appendChild(exTd);
+
       for (let i = 0; i < row.length; i++) {
         const td = document.createElement('td');
         let val = row[i];
@@ -127,9 +145,48 @@ export class ResultsTable {
     this.body.appendChild(frag);
   }
 
+  // Expande/colapsa el detalle key-value de una fila, insertándolo como <tr> siguiente.
+  _toggleRowDetail(tr, btn, fields, snapshot, editable) {
+    const next = tr.nextElementSibling;
+    if (next && next.classList.contains('row-detail')) {
+      next.remove();
+      btn.textContent = '▶';
+      tr.classList.remove('row-expanded');
+      return;
+    }
+
+    const detailTr = document.createElement('tr');
+    detailTr.className = 'row-detail';
+    const td = document.createElement('td');
+    td.colSpan = fields.length + 1 + (editable ? 1 : 0);
+
+    const grid = document.createElement('div');
+    grid.className = 'row-detail-grid';
+    fields.forEach((f, i) => {
+      const k = document.createElement('div');
+      k.className = 'rd-key';
+      k.textContent = f.name;
+      const v = document.createElement('div');
+      v.className = 'rd-val';
+      this._setCellContent(v, f.name, snapshot[i]);   // reutiliza estilo NULL + navegación FK
+      grid.appendChild(k);
+      grid.appendChild(v);
+    });
+
+    td.appendChild(grid);
+    detailTr.appendChild(td);
+    tr.after(detailTr);
+    btn.textContent = '▼';
+    tr.classList.add('row-expanded');
+  }
+
   _buildInsertRow(fields) {
     const tr = document.createElement('tr');
     tr.className = 'tr-insert';
+
+    const exTd = document.createElement('td');
+    exTd.className = 'td-expand';
+    tr.appendChild(exTd);
 
     const inputs = fields.map(f => {
       const td = document.createElement('td');
